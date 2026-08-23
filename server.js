@@ -15,4 +15,4 @@ app.post('/api/cart', (req,res)=>{
 app.get('/', (req,res)=>{
  res.send('SM Modul fut! Bevetel: '+bevetelek)
 })
-app.listen(3000, ()=>{console.log('Fut')})
+app.listen(process.env.PORT || 3000, ()=>{console.log('Fut')})
