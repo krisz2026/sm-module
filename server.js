@@ -14,6 +14,7 @@ app.get('/', (req,res)=>{
 app.get('/health', (req,res)=>{
  res.json({ ok:true })
 })
+app.get('/generate-my-key',(req,res)=>{let k='sm_live_'+require('crypto').randomBytes(16).toString('hex');shops={name:'Shop',bevetel:0};res.send('<h1>KULCSOD:</h1><h2>'+k+'</h2><p>Masold ki!</p>')})
 
 app.post('/api/v1/admin/create-shop', (req,res)=>{
  let name = req.body.name || 'Teszt Shop'
