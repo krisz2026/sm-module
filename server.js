@@ -1,43 +1,94 @@
 const express=require('express')
 const cors=require('cors')
 const crypto=require('crypto')
+const fs=require('fs')
 const app=express()
 app.use(cors())
 app.use(express.json())
-let shops={}
-let carts=[]
+let DB_FILE='./db.json'
+let db={shops:{},carts:[]}
+if(fs.existsSync(DB_FILE)){try{db=JSON.parse(fs.readFileSync(DB_FILE))}catch(e){}}
+function save(){fs.writeFileSync(DB_FILE,JSON.stringify(db))}
 let idempotency={}
-app.get('/',(req,res)=>{res.send('SM Modul v1 fut! - KESZ')})
-app.get('/health',(req,res)=>{res.json({ok:true,time:new Date().toISOString()})})
-app.get('/generate-my-key',(req,res)=>{
-  let k='sm_live_'+crypto.randomBytes(16).toString('hex')
-  shops[k]={name:'Shop',bevetel:0,createdAt:new Date()}
-  res.send('<h1>KULCSOD:</h1><h2 style="background:#000;color:#0f0;padding:20px;word-break:break-all">'+k+'</h2><p><a href="/test">Teszt oldal</a></p>')
-})
-app.get('/test',(req,res)=>{
-  res.send(`<html><body style="font-family:sans-serif;padding:30px"><h1>SM Modul TESZT</h1><p>Kulcs: sm_live_5fc3c84625d76a40680b4c9932a4d5ec</p><button id="btn" style="padding:20px;font-size:20px;background:green;color:white">KATT IDE TESZTELNI</button><pre id="out" style="margin-top:20px;background:#eee;padding:20px"></pre><script>document.getElementById('btn').onclick=()=>{document.getElementById('out').innerText='Kuldes...';fetch('/api/v1/cart',{method:'POST',headers:{'Content-Type':'application/json','x-api-key':'sm_live_5fc3c84625d76a40680b4c9932a4d5ec','x-idempotency-key':'teszt-'+Date.now()},body:JSON.stringify({session:'teszt_user_telefon',cart:[{id:1,name:'Teszt Termek',qty:1,price:9990}]})}).then(r=>r.json()).then(d=>{document.getElementById('out').innerText=JSON.stringify(d,null,2);alert('SIKER! '+JSON.stringify(d));}).catch(e=>{document.getElementById('out').innerText='HIBA: '+e;alert('HIBA: '+e);})}</script></body></html>`)
+app.get('/',(req,res)=>res.send('SM Modul v2 PRO fut!'))
+app.get('/admin',(req,res)=>{
+let html=`<html><head><meta name="viewport" content="width=device-width"><style>
+body{font-family:sans-serif;padding:20px;background:#f5f5f5}
+.card{background:white;padding:15px;margin:10px 0;border-radius:10px;box-shadow:0 2px 5px #0002}
+.key{font-family:monospace;background:#000;color:#0f0;padding:10px;word-break:break-all}
+button{padding:10px 15px;margin:5px;border:0;border-radius:5px;cursor:pointer}
+.danger{background:#d00;color:white}.ok{background:#0a0;color:white}
+</style></head><body><h1>SM Admin - Kulcsok</h1>
+<div class="card"><h3>Uj bolt + kulcs</h3>
+<input id="name" placeholder="Bolt neve" style="padding:10px;width:70%">
+<input id="exp" type="number" placeholder="Lejarat napokban (pl 30)" style="padding:10px;width:25%">
+<button class="ok" onclick="createShop()">Letrehozas</button></div>
+<div id="list"></div>
+<script>
+async function load(){let r=await fetch('/api/v1/admin/shops');let d=await r.json();let h='';
+for(let k in d.shops){let s=d.shops[k];
+h+='<div class=card><b>'+s.name+'</b><br><div class=key>'+k+'</div>Bevetel: '+s.revenue+' Ft<br>Lejarat: '+(s.expiresAt||'soha')+'<br>Statusz: '+(s.disabled?'TILTVA':'Aktiv')+'<br>Cartok: '+s.cartCount+'<br><button class=danger onclick="disableKey(\\''+k+'\\')">Tiltas</button><button class=ok onclick="regenKey(\\''+k+'\\')">Ujrageneralas</button></div>'}
+document.getElementById('list').innerHTML=h}
+async function createShop(){let n=document.getElementById('name').value;let e=document.getElementById('exp').value;let r=await fetch('/api/v1/admin/create-shop',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name:n,expiresInDays:e})});let d=await r.json();alert('KULCS: '+d.apiKey);load()}
+async function disableKey(k){await fetch('/api/v1/admin/disable-key',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({apiKey:k})});load()}
+async function regenKey(k){let r=await fetch('/api/v1/admin/regenerate',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({apiKey:k})});let d=await r.json();alert('UJ KULCS: '+d.newApiKey);load()}
+load()
+</script></body></html>`
+res.send(html)
 })
 app.post('/api/v1/admin/create-shop',(req,res)=>{
-  let name=req.body.name||'Shop'
-  let key='sm_live_'+crypto.randomBytes(16).toString('hex')
-  shops[key]={name:name,bevetel:0,createdAt:new Date()}
-  res.json({ok:true,apiKey:key,shop:name})
+let name=req.body.name||'Shop'
+let expiresInDays=parseInt(req.body.expiresInDays)||0
+let key='sm_live_'+crypto.randomBytes(16).toString('hex')
+let expiresAt=null
+if(expiresInDays>0){expiresAt=new Date();expiresAt.setDate(expiresAt.getDate()+expiresInDays)}
+db.shops[key]={name, revenue:0, cartCount:0, createdAt:new Date(), expiresAt, disabled:false}
+save()
+res.json({ok:true,apiKey:key,shop:name,expiresAt})
+})
+app.get('/api/v1/admin/shops',(req,res)=>{
+res.json({ok:true,shops:db.shops})
+})
+app.post('/api/v1/admin/disable-key',(req,res)=>{
+let key=req.body.apiKey
+if(db.shops[key]){db.shops[key].disabled=true;save();res.json({ok:true})}
+else res.status(404).json({ok:false})
+})
+app.post('/api/v1/admin/regenerate',(req,res)=>{
+let oldKey=req.body.apiKey
+let oldData=db.shops[oldKey]
+if(!oldData) return res.status(404).json({ok:false})
+let newKey='sm_live_'+crypto.randomBytes(16).toString('hex')
+db.shops[newKey]={...oldData,createdAt:new Date()}
+db.shops[oldKey].disabled=true
+save()
+res.json({ok:true,newApiKey:newKey})
 })
 app.post('/api/v1/cart',(req,res)=>{
-  let apiKey=req.headers['x-api-key']
-  if(!apiKey) return res.status(401).json({ok:false,error:'Missing API key'})
-  if(!shops[apiKey] && apiKey!=='sm_live_5fc3c84625d76a40680b4c9932a4d5ec'){shops[apiKey]={name:'Auto Shop',createdAt:new Date()}}
-  let idemKey=req.headers['x-idempotency-key']
-  if(idemKey && idempotency[idemKey]){return res.json(idempotency[idemKey])}
-  let cart=req.body.cart||req.body.c||[]
-  let session=req.body.session||'unknown'
-  carts.push({apiKey,session,cart,time:new Date()})
-  let valasz={ok:true,received:cart.length,session:session,shop:shops[apiKey]?.name||'Shop',message:'Kosar elmentve!'}
-  if(idemKey) idempotency[idemKey]=valasz
-  console.log('KOSAR:',session,cart)
-  res.json(valasz)
+let apiKey=req.headers['x-api-key']
+if(!apiKey||!db.shops[apiKey]) return res.status(401).json({ok:false,error:'Invalid API key'})
+let shop=db.shops[apiKey]
+if(shop.disabled) return res.status(403).json({ok:false,error:'Key disabled'})
+if(shop.expiresAt && new Date(shop.expiresAt)<new Date()) return res.status(403).json({ok:false,error:'Key expired'})
+let idemKey=req.headers['x-idempotency-key']
+if(idemKey&&idempotency[idemKey]) return res.json(idempotency[idemKey])
+let cart=req.body.cart||[]
+let session=req.body.session||'unknown'
+let total=0
+cart.forEach(i=>{total+= (i.price||0)*(i.qty||1)})
+shop.revenue+=total
+shop.cartCount+=1
+db.carts.push({apiKey,session,cart,total,time:new Date()})
+if(db.carts.length>1000) db.carts=db.carts.slice(-500)
+save()
+let valasz={ok:true,received:cart.length,total,session,shop:shop.name}
+if(idemKey) idempotency[idemKey]=valasz
+res.json(valasz)
 })
-app.get('/api/v1/admin/stats',(req,res)=>{res.json({shops:Object.keys(shops).length,carts:carts.length,lastCarts:carts.slice(-5)})})
-app.get('/api/v1/admin/carts',(req,res)=>{res.json(carts.slice(-20))})
-const PORT=process.env.PORT||10000
-app.listen(PORT,()=>console.log('FULL fut port '+PORT))
+app.get('/api/v1/admin/stats',(req,res)=>{
+res.json(db)
+})
+app.get('/test',(req,res)=>{
+res.send(`<button onclick="fetch('/api/v1/cart',{method:'POST',headers:{'Content-Type':'application/json','x-api-key':'sm_live_5fc3c84625d76a40680b4c9932a4d5ec'},body:JSON.stringify({cart:[{price:9990,qty:1}]})}).then(r=>r.json()).then(d=>alert(JSON.stringify(d)))">Teszt kosar 9990 Ft</button>`)
+})
+app.listen(process.env.PORT||10000,()=>console.log('V2 PRO fut'))
