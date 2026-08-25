@@ -7,6 +7,7 @@ const bodyParser = require('body-parser');
 const app = express();
 app.use(cors());
 app.use(bodyParser.json());
+app.use(bodyParser.urlencoded({extended:true}));
 
 const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD ='admin123';
 const DB_FILE = process.env.DB_FILE || './db.json';
@@ -106,7 +107,7 @@ p{color:#666;font-size:13px}
 </body></html>`)
 })
 
-app.post('/api/v1/admin/login',(req,res)=>{
+app.all('/api/v1/admin/login',(req,res)=>{
 let pass=req.body.password||req.body.pass||req.query.password;
 if(pass===ADMIN_PASSWORD){
 res.setHeader('Set-Cookie',`admin_auth=${ADMIN_PASSWORD}; Path=/; HttpOnly; SameSite=Lax`);
