@@ -10,7 +10,7 @@ let db={shops:{},carts:[]}
 if(fs.existsSync(DB_FILE)){try{db=JSON.parse(fs.readFileSync(DB_FILE))}catch(e){}}
 function save(){fs.writeFileSync(DB_FILE,JSON.stringify(db))}
 let idempotency={}
-app.get('/',(req,res)=>res.send('SM Modul v2 PRO fut!'))
+app.get('/',(req,res)=>res.send('SM Modul v3 PRO fut!'))
 app.get('/admin',(req,res)=>{
 let html=`<html><head><meta name="viewport" content="width=device-width"><style>
 body{font-family:sans-serif;padding:20px;background:#f5f5f5}
@@ -27,7 +27,7 @@ button{padding:10px 15px;margin:5px;border:0;border-radius:5px;cursor:pointer}
 <script>
 async function load(){let r=await fetch('/api/v1/admin/shops');let d=await r.json();let h='';
 for(let k in d.shops){let s=d.shops[k];
-h+='<div class=card><b>'+s.name+'</b><br><div class=key>'+k+'</div>Bevetel: '+s.revenue+' Ft<br>Lejarat: '+(s.expiresAt||'soha')+'<br>Statusz: '+(s.disabled?'TILTVA':'Aktiv')+'<br>Cartok: '+s.cartCount+'<br><button class=danger onclick="disableKey(\\''+k+'\\')">Tiltas</button><button class=ok onclick="regenKey(\\''+k+'\\')">Ujrageneralas</button></div>'}
+h+='<div class=card><b>'+s.name+'</b><br><div class=key>'+k+'</div>Bevetel: '+s.revenue+' Ft<br>Lejarat: '+(s.expiresAt||'soha')+'<br>Statusz: '+(s.disabled?'TILTVA':'Aktiv')+'<br>Cartok: '+s.cartCount+'<br><button class=danger onclick="disableKey(\\''+k+'\\')">Tiltas</button><button class=ok onclick="regenKey(\\''+k+'\\')">Ujrageneralas</button><br><a href="/test?key='+k+'"><button>TESZT ehhez a kulcshoz</button></a></div>'}
 document.getElementById('list').innerHTML=h}
 async function createShop(){let n=document.getElementById('name').value;let e=document.getElementById('exp').value;let r=await fetch('/api/v1/admin/create-shop',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name:n,expiresInDays:e})});let d=await r.json();alert('KULCS: '+d.apiKey);load()}
 async function disableKey(k){await fetch('/api/v1/admin/disable-key',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({apiKey:k})});load()}
@@ -66,7 +66,7 @@ res.json({ok:true,newApiKey:newKey})
 })
 app.post('/api/v1/cart',(req,res)=>{
 let apiKey=req.headers['x-api-key']
-if(!apiKey||!db.shops[apiKey]) return res.status(401).json({ok:false,error:'Invalid API key'})
+if(!apiKey||!db.shops[apiKey]) return res.status(401).json({ok:false,error:'Invalid API key '+apiKey})
 let shop=db.shops[apiKey]
 if(shop.disabled) return res.status(403).json({ok:false,error:'Key disabled'})
 if(shop.expiresAt && new Date(shop.expiresAt)<new Date()) return res.status(403).json({ok:false,error:'Key expired'})
@@ -89,6 +89,7 @@ app.get('/api/v1/admin/stats',(req,res)=>{
 res.json(db)
 })
 app.get('/test',(req,res)=>{
-res.send(`<button onclick="fetch('/api/v1/cart',{method:'POST',headers:{'Content-Type':'application/json','x-api-key':'sm_live_5fc3c84625d76a40680b4c9932a4d5ec'},body:JSON.stringify({cart:[{price:9990,qty:1}]})}).then(r=>r.json()).then(d=>alert(JSON.stringify(d)))">Teszt kosar 9990 Ft</button>`)
+let testKey=req.query.key||Object.keys(db.shops).find(k=>!db.shops[k].disabled)||'NINCS_KULCS'
+res.send(`<html><body style="font-family:sans-serif;padding:30px"><h1>Teszt - Kulcs: ${testKey}</h1><button id="btn" style="padding:20px;font-size:20px;background:green;color:white">Teszt kosar 9990 Ft kuldese</button><pre id="out" style="margin-top:20px;background:#eee;padding:20px"></pre><script>document.getElementById('btn').onclick=()=>{document.getElementById('out').innerText='Kuldes...';fetch('/api/v1/cart',{method:'POST',headers:{'Content-Type':'application/json','x-api-key':'${testKey}'},body:JSON.stringify({cart:[{price:9990,qty:1,name:'Teszt'}]})}).then(r=>r.json()).then(d=>{document.getElementById('out').innerText=JSON.stringify(d,null,2);alert('SIKER! Bevetel hozzaadva: 9990 Ft');}).catch(e=>{document.getElementById('out').innerText='HIBA: '+e})}</script><p><a href="/admin">Vissza adminra</a></p></body></html>`)
 })
-app.listen(process.env.PORT||10000,()=>console.log('V2 PRO fut'))
+app.listen(process.env.PORT||10000,()=>console.log('V3 PRO fut'))
