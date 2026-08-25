@@ -1,46 +1,96 @@
-const express=require('express')
-const cors=require('cors')
-const crypto=require('crypto')
-const fs=require('fs')
-const path=require('path')
-const app=express()
-app.use(cors())
-app.use(express.json())
-app.use(express.urlencoded({extended:true}))
+const express = require('express');
+const fs = require('fs');
+const crypto = require('crypto');
+const cors = require('cors');
+const bodyParser = require('body-parser');
 
-let ADMIN_PASSWORD=process.env.ADMIN_PASSWORD || 'smadmin2024'
-let possiblePaths=['/data/db.json','./data/db.json','./db.json']
-let DB_FILE='./db.json'
-if(fs.existsSync('/data')) DB_FILE='/data/db.json'
-console.log('DB FILE: '+DB_FILE+' | ADMIN PASS: '+(ADMIN_PASSWORD?'beallitva':'nincs'))
+const app = express();
+app.use(cors());
+app.use(bodyParser.json());
 
-let db={shops:{},carts:[]}
-if(fs.existsSync(DB_FILE)){try{db=JSON.parse(fs.readFileSync(DB_FILE))}catch(e){}}
-function save(){try{let dir=path.dirname(DB_FILE); if(!fs.existsSync(dir)) fs.mkdirSync(dir,{recursive:true}); fs.writeFileSync(DB_FILE,JSON.stringify(db))}catch(e){}}
-let idempotency={}
+const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || 'admin123';
+const DB_FILE = process.env.DB_FILE || './db.json';
+const MONGO_URI = process.env.MONGO_URI || process.env.MONGODB_URI || '';
+let useMongo = false;
+let ShopModel = null;
+let CartModel = null;
 
-function parseCookies(req){
-let cookies={}
-if(req.headers.cookie){req.headers.cookie.split(';').forEach(c=>{let [k,v]=c.trim().split('='); cookies[k]=decodeURIComponent(v)})}
-return cookies
+// ----- MONGO SETUP -----
+if (MONGO_URI) {
+  try {
+    const mongoose = require('mongoose');
+    mongoose.connect(MONGO_URI).then(() => {
+      console.log('MongoDB Atlas csatlakozva! PERSISTENT IGEN');
+      useMongo = true;
+    }).catch(e => {
+      console.log('Mongo hiba, fallback file:', e.message);
+    });
+    const shopSchema = new mongoose.Schema({
+      _id: String,
+      name: String,
+      revenue: { type: Number, default: 0 },
+      cartCount: { type: Number, default: 0 },
+      disabled: { type: Boolean, default: false },
+      expiresAt: { type: Date, default: null },
+      createdAt: { type: Date, default: Date.now }
+    }, { _id: false });
+    const cartSchema = new mongoose.Schema({
+      apiKey: String,
+      session: String,
+      cart: Array,
+      total: Number,
+      time: { type: Date, default: Date.now }
+    });
+    ShopModel = mongoose.model('Shop', shopSchema);
+    CartModel = mongoose.model('Cart', cartSchema);
+  } catch (e) {
+    console.log('mongoose nincs telepítve, file mód');
+  }
 }
-function isAuthed(req){
-let cookies=parseCookies(req)
-return cookies.admin_auth===ADMIN_PASSWORD
-}
-function requireAuth(req,res,next){
-if(isAuthed(req)) return next()
-return res.redirect('/admin/login')
-}
 
-app.get('/',(req,res)=>res.send('SM Modul V5 Login + Persistent fut!'))
+// ----- FILE DB fallback -----
+let db = { shops: {}, carts: [] };
+function load() {
+  try {
+    if (fs.existsSync(DB_FILE)) {
+      db = JSON.parse(fs.readFileSync(DB_FILE, 'utf8'));
+      if (!db.shops) db.shops = {};
+      if (!db.carts) db.carts = [];
+    }
+  } catch {}
+}
+function save() {
+  if (useMongo) return;
+  try { fs.writeFileSync(DB_FILE, JSON.stringify(db, null, 2)); } catch {}
+}
+load();
+
+let idempotency = {};
+
+function parseCookies(req) {
+  let list = {};
+  let rc = req.headers.cookie;
+  if (rc) rc.split(';').forEach(c => {
+    let parts = c.split('=');
+    list[parts.shift().trim()] = decodeURI(parts.join('='));
+  });
+  return list;
+}
+function isAuthed(req) {
+  let c = parseCookies(req);
+  return c.admin_auth === ADMIN_PASSWORD;
+}
+function requireAuth(req, res, next) {
+  if (isAuthed(req)) return next();
+  res.redirect('/admin/login');
+}
 
 app.get('/admin/login',(req,res)=>{
-res.send(`<html><head><meta name="viewport" content="width=device-width"><style>
-body{font-family:sans-serif;background:#111;display:flex;justify-content:center;align-items:center;height:100vh;margin:0}
-.card{background:white;padding:30px;border-radius:16px;width:90%;max-width:360px;box-shadow:0 10px 30px #0005}
-input{width:100%;padding:14px;margin:10px 0;border-radius:8px;border:1px solid #ddd;box-sizing:border-box}
-button{width:100%;padding:14px;background:#111;color:white;border:0;border-radius:8px;font-weight:800;cursor:pointer}
+res.send(`<html><head><meta name="viewport" content="width=device-width,initial-scale=1"><style>
+body{font-family:sans-serif;background:#f5f5f5;display:flex;justify-content:center;align-items:center;height:100vh;margin:0}
+.card{background:white;padding:30px;border-radius:12px;box-shadow:0 2px 10px rgba(0,0,0,.1);width:320px}
+input{width:100%;padding:14px;margin:10px 0;border:1px solid #ddd;border-radius:8px;box-sizing:border-box}
+button{width:100%;padding:14px;background:#111;color:white;border:0;border-radius:8px;font-weight:bold;cursor:pointer}
 h2{margin:0 0 10px 0}
 p{color:#666;font-size:13px}
 </style></head><body>
@@ -48,53 +98,55 @@ p{color:#666;font-size:13px}
 <h2>🔒 SM Admin Belépés</h2>
 <p>Add meg a jelszót a dashboardhoz</p>
 <form method="POST" action="/api/v1/admin/login">
-<input type="password" name="password" placeholder="Jelszó" required autofocus>
+<input type="password" name="password" placeholder="Jelszó">
 <button type="submit">Belépés</button>
 </form>
-<p style="margin-top:15px">Alap jelszó: <b>smadmin2024</b><br>Renderen beállíthatod: ADMIN_PASSWORD</p>
+<p style="margin-top:15px">Alap jelszó: <b>admin123</b></p>
 </div>
 </body></html>`)
 })
 
 app.post('/api/v1/admin/login',(req,res)=>{
-let pass=req.body.password||req.body.pass||''
+let pass=req.body.password||req.body.pass||req.query.password;
 if(pass===ADMIN_PASSWORD){
-res.setHeader('Set-Cookie',`admin_auth=${encodeURIComponent(ADMIN_PASSWORD)}; Path=/; Max-Age=2592000; SameSite=Lax`)
+res.setHeader('Set-Cookie',`admin_auth=${ADMIN_PASSWORD}; Path=/; HttpOnly; SameSite=Lax`);
 return res.redirect('/admin')
 }
 res.send('<h1>Hibás jelszó!</h1><a href="/admin/login">Vissza</a>')
 })
 
 app.get('/admin/logout',(req,res)=>{
-res.setHeader('Set-Cookie','admin_auth=; Path=/; Max-Age=0')
+res.setHeader('Set-Cookie','admin_auth=; Path=/; Expires=Thu, 01 Jan 1970 00:00:00 GMT');
 res.redirect('/admin/login')
 })
 
 app.get('/admin',requireAuth,(req,res)=>{
-let html=`<html><head><meta name="viewport" content="width=device-width"><style>
+let persistentText = useMongo ? 'IGEN ✅ MongoDB Atlas' : 'NEM ❌';
+let dbInfo = useMongo ? 'MongoDB Atlas' : DB_FILE;
+let html=`<html><head><meta name="viewport" content="width=device-width,initial-scale=1"><style>
 body{font-family:sans-serif;padding:15px;background:#f5f5f5;margin:0}
-.card{background:white;padding:15px;margin:10px 0;border-radius:12px;box-shadow:0 2px 8px #0001}
-.key{font-family:monospace;background:#111;color:#0f0;padding:10px;border-radius:6px;word-break:break-all;font-size:13px}
-button{padding:10px 14px;margin:4px;border:0;border-radius:6px;cursor:pointer;font-weight:600}
-.danger{background:#e11;color:white}.ok{background:#0a7a0a;color:white}.gray{background:#eee}
-h1{margin:10px 0}.stat{font-size:24px;font-weight:800}
+.card{background:white;padding:15px;margin:10px 0;border-radius:12px;box-shadow:0 1px 4px rgba(0,0,0,.08)}
+.key{font-family:monospace;background:#111;color:#0f0;padding:8px;border-radius:6px;word-break:break-all;font-size:12px;display:block;margin:6px 0}
+button{padding:10px 14px;margin:4px;border:0;border-radius:8px;cursor:pointer;font-weight:bold}
+.danger{background:#e11;color:white}.ok{background:#0a7d00;color:white}
+h1{margin:10px 0}.stat{font-size:24px;font-weight:bold}
 canvas{max-width:100%}
-.tab{padding:10px 15px;background:#ddd;border-radius:8px;margin:2px;cursor:pointer;display:inline-block}
+.tab{padding:10px 15px;background:#ddd;border:0;border-radius:8px;margin-right:6px;cursor:pointer}
 .tab.active{background:#111;color:white}
 .info{background:#e6f7ff;border:1px solid #91d5ff;padding:10px;border-radius:8px;margin:10px 0}
 .top{display:flex;justify-content:space-between;align-items:center}
+input{padding:10px;border:1px solid #ddd;border-radius:8px;margin:4px}
 </style>
 <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 </head><body>
 <div class="top"><h1>SM Admin - PRO Dashboard V5</h1><a href="/admin/logout"><button class="danger">Kilépés</button></a></div>
-<div class="info">DB: ${DB_FILE} | Persistent: ${fs.existsSync('/data')?'IGEN ✅':'NEM ❌'} | Jelszó védelem: AKTÍV 🔒</div>
+<div class="info">DB: ${dbInfo} | Persistent: ${persistentText} | Jelszó védelem: AKTÍV 🔒</div>
 <div class="card">
 <h3>Uj bolt + kulcs</h3>
-<input id="name" placeholder="Bolt neve" style="padding:10px;width:60%">
-<input id="exp" type="number" placeholder="Lejarat nap" style="padding:10px;width:30%">
+<input id="name" placeholder="Bolt neve" style="width:60%">
+<input id="exp" type="number" placeholder="Lejarat nap (0=soha)" style="width:30%">
 <button class="ok" onclick="createShop()">Letrehozas</button>
 </div>
-
 <div class="card">
 <h3>Osszesites</h3>
 <div style="display:flex;gap:15px;flex-wrap:wrap">
@@ -103,34 +155,32 @@ canvas{max-width:100%}
 <div><div>Aktiv kulcs</div><div class="stat" id="totalShop">0</div></div>
 </div>
 </div>
-
 <div class="card">
 <div><span class="tab active" id="tab-daily" onclick="showChart('daily')">Napi</span>
 <span class="tab" id="tab-weekly" onclick="showChart('weekly')">Heti</span>
 <span class="tab" id="tab-monthly" onclick="showChart('monthly')">Havi</span></div>
 <canvas id="revChart" height="180"></canvas>
 </div>
-
 <div class="card">
 <canvas id="shopChart" height="140"></canvas>
-<p style="font-size:12px;color:#666">Shoponkenti bevetel</p>
+<p style="font-size:12px;color:#666">Shopok szerinti bevétel megoszlás</p>
 </div>
-
 <div id="list"></div>
-
 <script>
-let chartRev=null, chartShop=null, analyticsData=null
+let chartRev=null, chartShop=null, analyticsData=null;
 async function load(){
 let r=await fetch('/api/v1/admin/shops')
 let d=await r.json()
-let h='', totalRev=0, totalCart=0, active=0
-for(let k in d.shops){let s=d.shops[k]; if(!s.disabled) active++; totalRev+=s.revenue||0; totalCart+=s.cartCount||0;
-h+='<div class=card><b>'+s.name+'</b><br><div class=key>'+k+'</div>Bevetel: '+(s.revenue||0)+' Ft<br>Lejarat: '+(s.expiresAt||'soha')+'<br>Statusz: '+(s.disabled?'TILTVA':'Aktiv')+'<br>Cartok: '+(s.cartCount||0)+'<br><button class=danger onclick="disableKey(\\''+k+'\\')">Tiltas</button><button class=ok onclick="regenKey(\\''+k+'\\')">Ujrageneralas</button><br><a href="/test?key='+k+'"><button class=gray>TESZT ehhez</button></a></div>'}
-document.getElementById('list').innerHTML=h
-document.getElementById('totalRev').innerText=totalRev+' Ft'
-document.getElementById('totalCart').innerText=totalCart
-document.getElementById('totalShop').innerText=active
-let a=await fetch('/api/v1/admin/analytics').then(r=>r.json())
+let h='', totalRev=0, totalCart=0, active=0;
+for(let k in d.shops){let s=d.shops[k]; if(s.disabled) continue;
+totalRev+=s.revenue||0; totalCart+=s.cartCount||0; active++;
+h+='<div class=card><b>'+s.name+'</b><br><span class=key>'+k+'</span>Bevétel: '+(s.revenue||0)+' Ft | Kosár: '+(s.cartCount||0)+' <button onclick="disableKey(\\''+k+'\\')" class="danger">Tiltás</button> <button onclick="regenKey(\\''+k+'\\')">Újragenerálás</button></div>';
+}
+document.getElementById('list').innerHTML=h;
+document.getElementById('totalRev').innerText=totalRev+' Ft';
+document.getElementById('totalCart').innerText=totalCart;
+document.getElementById('totalShop').innerText=active;
+let a=await fetch('/api/v1/admin/analytics').then(r=>r.json());
 analyticsData=a
 drawShopChart(a.perShop)
 showChart('daily')
@@ -139,111 +189,137 @@ function showChart(type){
 document.querySelectorAll('.tab').forEach(t=>t.classList.remove('active'))
 document.getElementById('tab-'+type).classList.add('active')
 let labels=[], data=[]
-if(type==='daily'){labels=analyticsData.daily.map(x=>x.date); data=analyticsData.daily.map(x=>x.revenue)}
-if(type==='weekly'){labels=analyticsData.weekly.map(x=>x.week); data=analyticsData.weekly.map(x=>x.revenue)}
-if(type==='monthly'){labels=analyticsData.monthly.map(x=>x.month); data=analyticsData.monthly.map(x=>x.revenue)}
+if(type==='daily'){labels=analyticsData.daily.map(x=>x.date); data=analyticsData.daily.map(x=>x.total)}
+if(type==='weekly'){labels=analyticsData.weekly.map(x=>x.date); data=analyticsData.weekly.map(x=>x.total)}
+if(type==='monthly'){labels=analyticsData.monthly.map(x=>x.date); data=analyticsData.monthly.map(x=>x.total)}
 drawRevChart(labels,data,type)
 }
 function drawRevChart(labels,data,type){
 let ctx=document.getElementById('revChart')
 if(chartRev) chartRev.destroy()
-chartRev=new Chart(ctx,{type:'bar',data:{labels:labels,datasets:[{label:type+' bevetel Ft',data:data,backgroundColor:'#111'}]},options:{responsive:true,plugins:{legend:{display:false}}}})
+chartRev=new Chart(ctx,{type:'bar',data:{labels:labels,datasets:[{label:'Bevétel ('+type+')',data:data,backgroundColor:'#111'}]},options:{responsive:true,plugins:{legend:{display:false}}}})
 }
 function drawShopChart(perShop){
 let ctx=document.getElementById('shopChart')
 if(chartShop) chartShop.destroy()
-let labels=Object.values(perShop).map(s=>s.name)
+let labels=Object.values(perShop).map(s=>s.name||s.apiKey||'Shop')
 let data=Object.values(perShop).map(s=>s.revenue)
 if(labels.length===0){labels=['Nincs adat']; data=[1]}
-chartShop=new Chart(ctx,{type:'doughnut',data:{labels:labels,datasets:[{data:data,backgroundColor:['#111','#0a7a0a','#e11','#036','#f90','#06f']}]},options:{responsive:true}})
+chartShop=new Chart(ctx,{type:'doughnut',data:{labels:labels,datasets:[{data:data,backgroundColor:['#111','#333','#666','#999','#bbb','#e11','#0a7d00']}]},options:{responsive:true}})
 }
-async function createShop(){let n=document.getElementById('name').value;let e=document.getElementById('exp').value;let r=await fetch('/api/v1/admin/create-shop',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name:n,expiresInDays:e})});let d=await r.json();alert('KULCS: '+d.apiKey);load()}
-async function disableKey(k){await fetch('/api/v1/admin/disable-key',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({apiKey:k})});load()}
-async function regenKey(k){let r=await fetch('/api/v1/admin/regenerate',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({apiKey:k})});let d=await r.json();alert('UJ KULCS: '+d.newApiKey);load()}
+async function createShop(){let n=document.getElementById('name').value||'Shop'; let e=document.getElementById('exp').value||0;
+let r=await fetch('/api/v1/admin/create-shop',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name:n,expiresInDays:parseInt(e)})});
+let d=await r.json(); alert('Kulcs: '+d.apiKey); load()}
+async function disableKey(k){await fetch('/api/v1/admin/disable-key',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({apiKey:k})}); load()}
+async function regenKey(k){let r=await fetch('/api/v1/admin/regenerate',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({apiKey:k})}); let d=await r.json(); alert('Új kulcs: '+d.newApiKey); load()}
 load()
 </script>
 </body></html>`
 res.send(html)
 })
 
-// vedett API-k
-app.get('/api/v1/admin/shops',(req,res)=>{
-let c=parseCookies(req)
-if(c.admin_auth!==ADMIN_PASSWORD && req.headers['x-admin-pass']!==ADMIN_PASSWORD){
-  // engedjuk fetch-bol is ha nincs auth? dashboardrol hivjuk, cookie ott van, de API-t is vedjuk
-  // ha nincs cookie, vissza 401, de frontend ugyanazzal a cookie-val hivja
-  if(!isAuthed(req)) return res.status(401).json({ok:false,error:'Unauthorized'})
+app.get('/api/v1/admin/shops',async(req,res)=>{
+if(!isAuthed(req)) return res.status(401).json({ok:false});
+if(useMongo && ShopModel){
+ let shopsArr = await ShopModel.find({});
+ let shops = {}; shopsArr.forEach(s=>{ shops[s._id]=s });
+ return res.json({ok:true,shops});
 }
 res.json({ok:true,shops:db.shops})
 })
-app.get('/api/v1/admin/analytics',(req,res)=>{
-if(!isAuthed(req) && req.headers['x-admin-pass']!==ADMIN_PASSWORD) return res.status(401).json({ok:false})
-let dailyMap={}, weeklyMap={}, monthlyMap={}, perShop={}
-db.carts.forEach(c=>{
+app.get('/api/v1/admin/analytics',async(req,res)=>{
+if(!isAuthed(req) && req.headers['x-admin-pass']!==ADMIN_PASSWORD) return res.status(401).json({ok:false});
+let dailyMap={}, weeklyMap={}, monthlyMap={}, perShop={};
+let carts=[];
+if(useMongo && CartModel){
+ carts = await CartModel.find({}).sort({time:-1}).limit(2000);
+ let shopsArr = await ShopModel.find({});
+ shopsArr.forEach(s=>{ perShop[s._id]={name:s.name,revenue:s.revenue||0,count:s.cartCount||0, apiKey:s._id}});
+} else {
+ carts = db.carts;
+ for(let k in db.shops){ perShop[k]={name:db.shops[k].name, revenue:0, count:0, apiKey:k} }
+}
+carts.forEach(c=>{
 let d=new Date(c.time)
 let day=d.toISOString().slice(0,10)
 let month=d.toISOString().slice(0,7)
 let week=getWeek(d)
-dailyMap[day]=(dailyMap[day]||0)+c.total
-weeklyMap[week]=(weeklyMap[week]||0)+c.total
-monthlyMap[month]=(monthlyMap[month]||0)+c.total
-if(!perShop[c.apiKey]) perShop[c.apiKey]={name:db.shops[c.apiKey]?db.shops[c.apiKey].name:c.apiKey.slice(0,10), revenue:0, count:0}
-perShop[c.apiKey].revenue+=c.total
-perShop[c.apiKey].count+=1
+dailyMap[day]=(dailyMap[day]||0)+(c.total||0)
+weeklyMap[week]=(weeklyMap[week]||0)+(c.total||0)
+monthlyMap[month]=(monthlyMap[month]||0)+(c.total||0)
+if(!perShop[c.apiKey]) perShop[c.apiKey]={name:c.apiKey,revenue:0,count:0,apiKey:c.apiKey};
+perShop[c.apiKey].revenue+=c.total||0;
+perShop[c.apiKey].count+=1;
 })
-let daily=Object.keys(dailyMap).sort().slice(-14).map(date=>({date,revenue:dailyMap[date]}))
-let weekly=Object.keys(weeklyMap).sort().slice(-12).map(week=>({week,revenue:weeklyMap[week]}))
-let monthly=Object.keys(monthlyMap).sort().slice(-12).map(month=>({month,revenue:monthlyMap[month]}))
-if(daily.length===0) daily=[{date:new Date().toISOString().slice(0,10),revenue:0}]
+let daily=Object.keys(dailyMap).sort().slice(-14).map(k=>({date:k,total:dailyMap[k]}))
+let weekly=Object.keys(weeklyMap).sort().slice(-12).map(k=>({date:k,total:weeklyMap[k]}))
+let monthly=Object.keys(monthlyMap).sort().slice(-12).map(k=>({date:k,total:monthlyMap[k]}))
+if(daily.length===0) daily=[{date:new Date().toISOString().slice(0,10),total:0}]
 res.json({daily,weekly,monthly,perShop})
 })
 
-app.post('/api/v1/admin/create-shop',(req,res)=>{
-if(!isAuthed(req)) return res.status(401).json({ok:false})
+app.post('/api/v1/admin/create-shop',async(req,res)=>{
+if(!isAuthed(req)) return res.status(401).json({ok:false});
 let name=req.body.name||'Shop'
-let expiresInDays=parseInt(req.body.expiresInDays)||0
+let expiresInDays=parseInt(req.body.expiresInDays||req.body.exp||0)
 let key='sm_live_'+crypto.randomBytes(16).toString('hex')
 let expiresAt=null
-if(expiresInDays>0){expiresAt=new Date();expiresAt.setDate(expiresAt.getDate()+expiresInDays)}
-db.shops[key]={name, revenue:0, cartCount:0, createdAt:new Date(), expiresAt, disabled:false}
-save()
+if(expiresInDays>0){expiresAt=new Date(); expiresAt.setDate(expiresAt.getDate()+expiresInDays)}
+if(useMongo && ShopModel){
+ await ShopModel.create({_id:key,name,revenue:0,cartCount:0,expiresAt,createdAt:new Date()})
+} else {
+ db.shops[key]={name, revenue:0, cartCount:0, expiresAt, createdAt:new Date()};
+ save()
+}
 res.json({ok:true,apiKey:key,shop:name,expiresAt})
 })
-app.post('/api/v1/admin/disable-key',(req,res)=>{
-if(!isAuthed(req)) return res.status(401).json({ok:false})
+app.post('/api/v1/admin/disable-key',async(req,res)=>{
+if(!isAuthed(req)) return res.status(401).json({ok:false});
 let key=req.body.apiKey
-if(db.shops[key]){db.shops[key].disabled=true;save();res.json({ok:true})}
+if(useMongo && ShopModel){ await ShopModel.updateOne({_id:key},{disabled:true}); return res.json({ok:true}); }
+if(db.shops[key]){db.shops[key].disabled=true; save(); res.json({ok:true})}
 else res.status(404).json({ok:false})
 })
-app.post('/api/v1/admin/regenerate',(req,res)=>{
-if(!isAuthed(req)) return res.status(401).json({ok:false})
+app.post('/api/v1/admin/regenerate',async(req,res)=>{
+if(!isAuthed(req)) return res.status(401).json({ok:false});
 let oldKey=req.body.apiKey
-let oldData=db.shops[oldKey]
-if(!oldData) return res.status(404).json({ok:false})
+let oldData=null;
+if(useMongo && ShopModel){ oldData=await ShopModel.findById(oldKey); if(!oldData) return res.status(404).json({ok:false}); }
+else oldData=db.shops[oldKey];
+if(!oldData) return res.status(404).json({ok:false});
 let newKey='sm_live_'+crypto.randomBytes(16).toString('hex')
-db.shops[newKey]={...oldData,createdAt:new Date()}
-db.shops[oldKey].disabled=true
-save()
+if(useMongo && ShopModel){
+ await ShopModel.create({_id:newKey,name:oldData.name,revenue:oldData.revenue,cartCount:oldData.cartCount,createdAt:new Date(),expiresAt:oldData.expiresAt});
+ await ShopModel.updateOne({_id:oldKey},{disabled:true});
+} else {
+ db.shops[newKey]={...oldData,createdAt:new Date()};
+ db.shops[oldKey].disabled=true; save();
+}
 res.json({ok:true,newApiKey:newKey})
 })
-app.post('/api/v1/cart',(req,res)=>{
+app.post('/api/v1/cart',async(req,res)=>{
 let apiKey=req.headers['x-api-key']
-if(!apiKey||!db.shops[apiKey]) return res.status(401).json({ok:false,error:'Invalid API key'})
-let shop=db.shops[apiKey]
-if(shop.disabled) return res.status(403).json({ok:false,error:'Key disabled'})
-if(shop.expiresAt && new Date(shop.expiresAt)<new Date()) return res.status(403).json({ok:false,error:'Key expired'})
+let shop=null;
+if(useMongo && ShopModel){ shop=await ShopModel.findById(apiKey); if(!shop) return res.status(401).json({ok:false,msg:'bad key'}); }
+else { if(!apiKey||!db.shops[apiKey]) return res.status(401).json({ok:false}); shop=db.shops[apiKey]; }
+if(shop.disabled) return res.status(403).json({ok:false,msg:'disabled'});
+if(shop.expiresAt && new Date(shop.expiresAt)<new Date()) return res.status(403).json({ok:false,msg:'expired'});
 let idemKey=req.headers['x-idempotency-key']
 if(idemKey&&idempotency[idemKey]) return res.json(idempotency[idemKey])
 let cart=req.body.cart||[]
 let session=req.body.session||'unknown'
 let total=0
 cart.forEach(i=>{total+= (i.price||0)*(i.qty||1)})
-shop.revenue+=total
-shop.cartCount+=1
-db.carts.push({apiKey,session,cart,total,time:new Date().toISOString()})
-if(db.carts.length>2000) db.carts=db.carts.slice(-1000)
-save()
-let valasz={ok:true,received:cart.length,total,session,shop:shop.name}
+if(useMongo && CartModel){
+ shop.revenue+=total; shop.cartCount+=1; await shop.save();
+ await CartModel.create({apiKey,session,cart,total,time:new Date()});
+} else {
+ shop.revenue+=total; shop.cartCount+=1;
+ db.carts.push({apiKey,session,cart,total,time:new Date()});
+ if(db.carts.length>2000) db.carts=db.carts.slice(-2000);
+ save()
+}
+let valasz={ok:true,received:cart.length,total}
 if(idemKey) idempotency[idemKey]=valasz
 res.json(valasz)
 })
@@ -256,9 +332,5 @@ let yearStart=new Date(Date.UTC(date.getUTCFullYear(),0,1))
 let weekNo=Math.ceil(( ( (date - yearStart)/86400000)+1)/7)
 return date.getUTCFullYear()+'-W'+String(weekNo).padStart(2,'0')
 }
-app.get('/api/v1/admin/stats',(req,res)=>{res.json({dbFile:DB_FILE, persistent:fs.existsSync('/data'), ...db})})
-app.get('/test',(req,res)=>{
-let testKey=req.query.key||Object.keys(db.shops).find(k=>!db.shops[k].disabled)||'NINCS_KULCS'
-res.send(`<html><body style="font-family:sans-serif;padding:30px"><h1>Teszt - Kulcs: ${testKey}</h1><button id="btn" style="padding:20px;font-size:20px;background:green;color:white">Teszt kosar 9990 Ft kuldese</button><pre id="out" style="margin-top:20px;background:#eee;padding:20px"></pre><script>document.getElementById('btn').onclick=()=>{document.getElementById('out').innerText='Kuldes...';fetch('/api/v1/cart',{method:'POST',headers:{'Content-Type':'application/json','x-api-key':'${testKey}'},body:JSON.stringify({cart:[{price:9990,qty:1,name:'Teszt'}]})}).then(r=>r.json()).then(d=>{document.getElementById('out').innerText=JSON.stringify(d,null,2);alert('SIKER! Bevetel hozzaadva: 9990 Ft');}).catch(e=>{document.getElementById('out').innerText='HIBA: '+e})}</script><p><a href="/admin">Vissza adminra</a></p></body></html>`)
-})
-app.listen(process.env.PORT||10000,()=>console.log('V5 Login fut'))
+app.get('/',(req,res)=>{res.send('<h1>SM Modul V5 - PRO Fut! DB: '+(useMongo?'MongoDB Atlas ✅':'file')+'</h1><a href="/admin">Admin</a>')})
+app.listen(process.env.PORT||10000,()=>console.log('SM Modul V5 PRO Fut'))
