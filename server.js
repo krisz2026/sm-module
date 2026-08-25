@@ -8,7 +8,7 @@ const app = express();
 app.use(cors());
 app.use(bodyParser.json());
 
-const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || 'admin123';
+const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD ='admin123';
 const DB_FILE = process.env.DB_FILE || './db.json';
 const MONGO_URI = process.env.MONGO_URI || process.env.MONGODB_URI || '';
 let useMongo = false;
