@@ -35,7 +35,7 @@ if (MONGO_URI) {
       createdAt: { type: Date, default: Date.now }
     }, { _id: false });
     const cartSchema = new mongoose.Schema({
-      apiKey: String, session: String, cart: Array, total: Number,
+      apiKey: String, session: mongoose.Schema.Types.Mixed, cart: Array, total: Number,
       time: { type: Date, default: Date.now }
     });
     ShopModel = mongoose.model('Shop', shopSchema);
@@ -277,7 +277,7 @@ if(useMongo && ShopModel){
 shop.revenue=(shop.revenue||0)+price;
 shop.cartCount=(shop.cartCount||0)+1;
 await shop.save();
-await CartModel.create({shopId:key, items:[{name:'Teszt Termék', price, quantity:1}], total:price, createdAt:new Date(), session:{test:true}});
+await CartModel.create({shopId:key, items:[{name:'Teszt Termék', price, quantity:1}], total:price, createdAt:new Date(), session:JSON.stringify({test:true})});
 } else {
 shop.revenue=(shop.revenue||0)+price;
 shop.cartCount=(shop.cartCount||0)+1;
