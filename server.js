@@ -228,7 +228,7 @@ if(!isAuthed(req) && req.headers['x-admin-pass']!==ADMIN_PASSWORD) return res.st
 let dailyMap={}, weeklyMap={}, monthlyMap={}, perShop={}; let carts=[];
 if(useMongo && CartModel){ carts = await CartModel.find({}).sort({time:-1}).limit(2000); let shopsArr = await ShopModel.find({}); shopsArr.forEach(s=>{ perShop[s._id]={name:s.name,revenue:s.revenue||0,count:s.cartCount||0, apiKey:s._id}}); }
 else { carts = db.carts; for(let k in db.shops){ perShop[k]={name:db.shops[k].name, revenue:0, count:0, apiKey:k} } }
-carts.forEach(c=>{ let d=new Date(c.time); let day=d.toISOString().slice(0,10); let month=d.toISOString().slice(0,7); let week=getWeek(d); dailyMap[day]=(dailyMap[day]||0)+(c.total||0); weeklyMap[week]=(weeklyMap[week]||0)+(c.total||0); monthlyMap[month]=(monthlyMap[month]||0)+(c.total||0); if(!perShop[c.apiKey]) perShop[c.apiKey]={name:c.apiKey,revenue:0,count:0,apiKey:c.apiKey}; perShop[c.apiKey].revenue+=c.total||0; perShop[c.apiKey].count+=1; })
+carts.forEach(c=>{ let k=c.apiKey||c.shopId; let t=new Date(c.time||c.createdAt); if(!t||isNaN(t)) t=new Date(); let day=t.toISOString().slice(0,10); let month=t.toISOString().slice(0,7); let week=getWeek(t); dailyMap[day]=(dailyMap[day]||0)+(c.total||0); weeklyMap[week]=(weeklyMap[week]||0)+(c.total||0); monthlyMap[month]=(monthlyMap[month]||0)+(c.total||0); if(!perShop[k]) perShop[k]={name:k,revenue:0,count:0,apiKey:k}; perShop[k].revenue+=c.total||0; perShop[k].count+=1; })
 let daily=Object.keys(dailyMap).sort().slice(-14).map(k=>({date:k,total:dailyMap[k]}))
 let weekly=Object.keys(weeklyMap).sort().slice(-12).map(k=>({date:k,total:weeklyMap[k]}))
 let monthly=Object.keys(monthlyMap).sort().slice(-12).map(k=>({date:k,total:monthlyMap[k]}))
@@ -277,11 +277,11 @@ if(useMongo && ShopModel){
 shop.revenue=(shop.revenue||0)+price;
 shop.cartCount=(shop.cartCount||0)+1;
 await shop.save();
-await CartModel.create({shopId:key, items:[{name:'Teszt Termék', price, quantity:1}], total:price, createdAt:new Date(), session:JSON.stringify({test:true})});
+await CartModel.create({apiKey:key, session:{test:true, name:'debug'}, cart:[{name:'Teszt Termék', price, qty:1}], total:price, time:new Date()});
 } else {
 shop.revenue=(shop.revenue||0)+price;
 shop.cartCount=(shop.cartCount||0)+1;
-db.carts.push({shopId:key, items:[{name:'Teszt Termék', price}], total:price, createdAt:new Date()});
+db.carts.push({apiKey:key, session:{test:true}, cart:[{name:'Teszt Termék', price, qty:1}], total:price, time:new Date()});
 save();
 }
 res.send(`<h1>✅ SIKER!</h1><p>Bolt: ${shop.name||key}</p><p>+${price} Ft hozzáadva!</p><p>CartCount: ${shop.cartCount}</p><p>Revenue: ${shop.revenue}</p><a href="/admin">Menj az Adminba -></a>`);
