@@ -263,6 +263,31 @@ if(useMongo && CartModel){ shop.revenue+=total; shop.cartCount+=1; await shop.sa
 let valasz={ok:true,received:cart.length,total}; if(idemKey) idempotency[idemKey]=valasz; res.json(valasz)
 })
 
+
+app.get('/api/v1/debug/add-cart', async(req,res)=>{
+try{
+let key=req.query.key||req.query.apiKey;
+if(!key) return res.status(400).send('Hiányzik ?key= paraméter');
+let shop=null;
+if(useMongo && ShopModel){ shop=await ShopModel.findById(key); }
+else { shop=db.shops[key]; if(shop) shop._id=key; }
+if(!shop) return res.status(404).send('Nincs ilyen bolt: '+key);
+let price=5990;
+if(useMongo && ShopModel){
+shop.revenue=(shop.revenue||0)+price;
+shop.cartCount=(shop.cartCount||0)+1;
+await shop.save();
+await CartModel.create({shopId:key, items:[{name:'Teszt Termék', price, quantity:1}], total:price, createdAt:new Date(), session:{test:true}});
+} else {
+shop.revenue=(shop.revenue||0)+price;
+shop.cartCount=(shop.cartCount||0)+1;
+db.carts.push({shopId:key, items:[{name:'Teszt Termék', price}], total:price, createdAt:new Date()});
+save();
+}
+res.send(`<h1>✅ SIKER!</h1><p>Bolt: ${shop.name||key}</p><p>+${price} Ft hozzáadva!</p><p>CartCount: ${shop.cartCount}</p><p>Revenue: ${shop.revenue}</p><a href="/admin">Menj az Adminba -></a>`);
+}catch(e){ res.status(500).send('HIBA: '+e.message); }
+});
+
 app.get('/api/v1/debug/create', async(req,res)=>{
 try{
 let name=req.query.name||'Teszt Bolt';
