@@ -1,3 +1,4 @@
+
 const express = require('express');
 const fs = require('fs');
 const crypto = require('crypto');
@@ -16,7 +17,6 @@ let useMongo = false;
 let ShopModel = null;
 let CartModel = null;
 
-// ----- MONGO SETUP -----
 if (MONGO_URI) {
   try {
     const mongoose = require('mongoose');
@@ -49,7 +49,6 @@ if (MONGO_URI) {
   }
 }
 
-// ----- FILE DB fallback -----
 let db = { shops: {}, carts: [] };
 function load() {
   try {
@@ -125,47 +124,38 @@ app.get('/admin',requireAuth,(req,res)=>{
 let persistentText = useMongo ? 'IGEN ✅ MongoDB Atlas' : 'NEM ❌';
 let dbInfo = useMongo ? 'MongoDB Atlas' : DB_FILE;
 let html=`<html><head><meta name="viewport" content="width=device-width,initial-scale=1"><style>
-body{font-family:sans-serif;padding:15px;background:#f5f5f5;margin:0}
-.card{background:white;padding:15px;margin:10px 0;border-radius:12px;box-shadow:0 1px 4px rgba(0,0,0,.08)}
-.key{font-family:monospace;background:#111;color:#0f0;padding:8px;border-radius:6px;word-break:break-all;font-size:12px;display:block;margin:6px 0}
-button{padding:10px 14px;margin:4px;border:0;border-radius:8px;cursor:pointer;font-weight:bold}
+body{font-family:sans-serif;padding:20px;background:#000;color:#fff;margin:0}
+.key{font-family:monospace;background:#111;color:#0f0;padding:6px;border-radius:4px;word-break:break-all;font-size:12px;display:block;margin:6px 0}
+button{padding:8px 12px;margin:4px;border:0;border-radius:6px;cursor:pointer;font-weight:bold}
 .danger{background:#e11;color:white}.ok{background:#0a7d00;color:white}
-h1{margin:10px 0}.stat{font-size:24px;font-weight:bold}
-canvas{max-width:100%}
-.tab{padding:10px 15px;background:#ddd;border:0;border-radius:8px;margin-right:6px;cursor:pointer}
-.tab.active{background:#111;color:white}
-.info{background:#e6f7ff;border:1px solid #91d5ff;padding:10px;border-radius:8px;margin:10px 0}
-.top{display:flex;justify-content:space-between;align-items:center}
-input{padding:10px;border:1px solid #ddd;border-radius:8px;margin:4px}
+h1,h2,h3{font-weight:300;letter-spacing:1px}
+.tab{padding:8px 12px;background:#222;color:#888;border:0;border-radius:20px;margin-right:6px;cursor:pointer}
+.tab.active{background:#fff;color:#000}
+hr{border:0;border-top:1px solid #222;margin:20px 0}
+input{padding:10px;border:1px solid #333;background:#111;color:#fff;border-radius:6px;margin:4px}
 </style>
 <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 </head><body>
-<div class="top"><h1>SM Admin - PRO Dashboard V5</h1><a href="/admin/logout"><button class="danger">Kilépés</button></a></div>
-<div class="info">DB: ${dbInfo} | Persistent: ${persistentText} | Jelszó védelem: AKTÍV 🔒</div>
-<div class="card">
+<div style="display:flex;justify-content:space-between;align-items:center"><h1>SM Admin - V6 NOBOX GRAFIKON</h1><a href="/admin/logout"><button class="danger">Kilépés</button></a></div>
+<p>DB: ${dbInfo} | Persistent: ${persistentText}</p>
+<hr>
 <h3>Uj bolt + kulcs</h3>
-<input id="name" placeholder="Bolt neve" style="width:60%">
-<input id="exp" type="number" placeholder="Lejarat nap (0=soha)" style="width:30%">
+<input id="name" placeholder="Bolt neve" style="width:50%">
+<input id="exp" type="number" placeholder="Lejarat nap" style="width:25%">
 <button class="ok" onclick="createShop()">Letrehozas</button>
-</div>
-<div class="card">
-<h3>Osszesites</h3>
-<div style="display:flex;gap:15px;flex-wrap:wrap">
-<div><div>Ossz bevetel</div><div class="stat" id="totalRev">0 Ft</div></div>
-<div><div>Ossz kosar</div><div class="stat" id="totalCart">0</div></div>
-<div><div>Aktiv kulcs</div><div class="stat" id="totalShop">0</div></div>
-</div>
-</div>
-<div class="card">
-<div><span class="tab active" id="tab-daily" onclick="showChart('daily')">Napi</span>
-<span class="tab" id="tab-weekly" onclick="showChart('weekly')">Heti</span>
-<span class="tab" id="tab-monthly" onclick="showChart('monthly')">Havi</span></div>
-<canvas id="revChart" height="180"></canvas>
-</div>
-<div class="card">
-<canvas id="shopChart" height="140"></canvas>
-<p style="font-size:12px;color:#666">Shopok szerinti bevétel megoszlás</p>
-</div>
+<hr>
+<h3>Osszesites - DOBOZ NELKUL</h3>
+<p>Ossz bevetel: <b id="totalRev" style="color:#fff;font-size:22px">0 Ft</b> | Ossz kosar: <b id="totalCart" style="color:#fff">0</b> | Aktiv kulcs: <b id="totalShop" style="color:#fff">0</b></p>
+<hr>
+<div><span class="tab active" id="tab-daily" onclick="showChart('daily')">Napi bevetel</span>
+<span class="tab" id="tab-weekly" onclick="showChart('weekly')">Heti bevetel</span>
+<span class="tab" id="tab-monthly" onclick="showChart('monthly')">Havi bevetel</span></div>
+<canvas id="revChart" height="200"></canvas>
+<hr>
+<h3>Boltok szerinti bevetel</h3>
+<canvas id="shopChart" height="200"></canvas>
+<hr>
+<h3>Aktiv kulcsok - DOBOZ NELKUL</h3>
 <div id="list"></div>
 <script>
 let chartRev=null, chartShop=null, analyticsData=null;
@@ -175,7 +165,7 @@ let d=await r.json()
 let h='', totalRev=0, totalCart=0, active=0;
 for(let k in d.shops){let s=d.shops[k]; if(s.disabled) continue;
 totalRev+=s.revenue||0; totalCart+=s.cartCount||0; active++;
-h+='<div class=card><b>'+s.name+'</b><br><span class=key>'+k+'</span>Bevétel: '+(s.revenue||0)+' Ft | Kosár: '+(s.cartCount||0)+' <button onclick="disableKey(\\''+k+'\\')" class="danger">Tiltás</button> <button onclick="regenKey(\\''+k+'\\')">Újragenerálás</button></div>';
+h+='<div style="padding:10px 0;border-bottom:1px solid #222"><b style="color:#fff">'+s.name+'</b><br><span class=key>'+k+'</span>Bevétel: '+(s.revenue||0)+' Ft | Kosár: '+(s.cartCount||0)+' <button onclick="disableKey(\''+k+'\')" class="danger">Tiltás</button> <button onclick="regenKey(\''+k+'\')">Újragenerálás</button></div>';
 }
 document.getElementById('list').innerHTML=h;
 document.getElementById('totalRev').innerText=totalRev+' Ft';
@@ -198,7 +188,7 @@ drawRevChart(labels,data,type)
 function drawRevChart(labels,data,type){
 let ctx=document.getElementById('revChart')
 if(chartRev) chartRev.destroy()
-chartRev=new Chart(ctx,{type:'bar',data:{labels:labels,datasets:[{label:'Bevétel ('+type+')',data:data,backgroundColor:'#111'}]},options:{responsive:true,plugins:{legend:{display:false}}}})
+chartRev=new Chart(ctx,{type:'bar',data:{labels:labels,datasets:[{label:'Bevétel ('+type+')',data:data,backgroundColor:'#fff',borderColor:'#fff',borderWidth:1}]},options:{responsive:true,plugins:{legend:{display:false}},scales:{x:{grid:{color:'#222'},ticks:{color:'#888'}},y:{grid:{color:'#222'},ticks:{color:'#888'}}}}})
 }
 function drawShopChart(perShop){
 let ctx=document.getElementById('shopChart')
@@ -206,7 +196,7 @@ if(chartShop) chartShop.destroy()
 let labels=Object.values(perShop).map(s=>s.name||s.apiKey||'Shop')
 let data=Object.values(perShop).map(s=>s.revenue)
 if(labels.length===0){labels=['Nincs adat']; data=[1]}
-chartShop=new Chart(ctx,{type:'doughnut',data:{labels:labels,datasets:[{data:data,backgroundColor:['#111','#333','#666','#999','#bbb','#e11','#0a7d00']}]},options:{responsive:true}})
+chartShop=new Chart(ctx,{type:'doughnut',data:{labels:labels,datasets:[{data:data,backgroundColor:['#fff','#888','#444','#222','#e11','#0a7d00']}]},options:{responsive:true,plugins:{legend:{labels:{color:'#888'}}}}})
 }
 async function createShop(){let n=document.getElementById('name').value||'Shop'; let e=document.getElementById('exp').value||0;
 let r=await fetch('/api/v1/admin/create-shop',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name:n,expiresInDays:parseInt(e)})});
@@ -218,6 +208,7 @@ load()
 </body></html>`
 res.send(html)
 })
+
 
 app.get('/api/v1/admin/shops',async(req,res)=>{
 if(!isAuthed(req)) return res.status(401).json({ok:false});
@@ -333,5 +324,5 @@ let yearStart=new Date(Date.UTC(date.getUTCFullYear(),0,1))
 let weekNo=Math.ceil(( ( (date - yearStart)/86400000)+1)/7)
 return date.getUTCFullYear()+'-W'+String(weekNo).padStart(2,'0')
 }
-app.get('/',(req,res)=>{res.send('<h1>SM Modul V5 - PRO Fut! DB: '+(useMongo?'MongoDB Atlas ✅':'file')+'</h1><a href="/admin">Admin</a>')})
-app.listen(process.env.PORT||10000,()=>console.log('SM Modul V5 PRO Fut'))
+app.get('/',(req,res)=>{res.send('<h1>SM Modul V6 NOBOX - PRO Fut! DB: '+(useMongo?'MongoDB Atlas ✅':'file')+'</h1><a href="/admin">Admin</a>')})
+app.listen(process.env.PORT||10000,()=>console.log('SM Modul V6 NOBOX PRO Fut'))
