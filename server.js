@@ -156,7 +156,8 @@ h2{font-size:18px;margin:0 0 12px}
 <script>
 let chartRev=null, chartShop=null, analyticsData=null;
 async function load(){
-let r=await fetch('/api/v1/admin/shops')
+try{
+let r=await fetch('/api/v1/admin/shops',{credentials:'same-origin'})
 let d=await r.json()
 let h='', totalRev=0, totalCart=0, active=0;
 for(let k in d.shops){let s=d.shops[k]; if(s.disabled) continue;
@@ -195,9 +196,20 @@ let data=Object.values(perShop).map(s=>s.revenue)
 if(labels.length===0){labels=['Nincs adat']; data=[1]}
 chartShop=new Chart(ctx,{type:'doughnut',data:{labels:labels,datasets:[{data:data,backgroundColor:['#0f172a','#334155','#64748b','#94a3b8','#cbd5e1','#16a34a'],borderWidth:0}]},options:{responsive:true,plugins:{legend:{position:'bottom'}}}})
 }
-async function createShop(){let n=document.getElementById('name').value||'Shop'; let e=document.getElementById('exp').value||0;
-let r=await fetch('/api/v1/admin/create-shop',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name:n,expiresInDays:parseInt(e)})});
-let d=await r.json(); alert('Kulcs: '+d.apiKey); load()}
+async function createShop(){
+let n=document.getElementById('name').value.trim();
+if(!n){ alert('Írj be egy nevet!'); return; }
+let e=document.getElementById('exp').value||0;
+try{
+let r=await fetch('/api/v1/admin/create-shop',{method:'POST',headers:{'Content-Type':'application/json'},credentials:'same-origin',body:JSON.stringify({name:n,expiresInDays:parseInt(e)})});
+let txt=await r.text();
+let d=null; try{ d=JSON.parse(txt); }catch{ alert('Hiba válasz: '+txt.substring(0,200)); return; }
+if(!d.ok){ alert('Hiba: '+JSON.stringify(d)); return; }
+alert('✅ LÉTREHOZVA! Kulcs:\n\n'+d.apiKey+'\n\nMásold ki!');
+document.getElementById('name').value='';
+load()
+}catch(err){ alert('Hálózati hiba: '+err.message); console.error(err); }
+}
 async function disableKey(k){if(!confirm('Tiltod?'))return; await fetch('/api/v1/admin/disable-key',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({apiKey:k})}); load()}
 async function regenKey(k){let r=await fetch('/api/v1/admin/regenerate',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({apiKey:k})}); let d=await r.json(); alert('Új kulcs: '+d.newApiKey); load()}
 load()
