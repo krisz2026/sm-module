@@ -262,6 +262,26 @@ let cart=req.body.cart||[]; let session=req.body.session||'unknown'; let total=0
 if(useMongo && CartModel){ shop.revenue+=total; shop.cartCount+=1; await shop.save(); await CartModel.create({apiKey,session,cart,total,time:new Date()}); } else { shop.revenue+=total; shop.cartCount+=1; db.carts.push({apiKey,session,cart,total,time:new Date()}); if(db.carts.length>2000) db.carts=db.carts.slice(-2000); save() }
 let valasz={ok:true,received:cart.length,total}; if(idemKey) idempotency[idemKey]=valasz; res.json(valasz)
 })
+
+app.get('/api/v1/debug/create', async(req,res)=>{
+try{
+let name=req.query.name||'Teszt Bolt';
+let key='sm_live_'+crypto.randomBytes(16).toString('hex');
+if(useMongo && ShopModel){
+await ShopModel.create({_id:key,name,revenue:0,cartCount:0,createdAt:new Date(),expiresAt:null});
+return res.json({ok:true, apiKey:key, msg:'MongoDB-ben létrehozva!', mongo: true});
+} else {
+db.shops[key]={name,revenue:0,cartCount:0,createdAt:new Date(),expiresAt:null};
+save();
+return res.json({ok:true, apiKey:key, msg:'File DB-ben létrehozva', mongo:false});
+}
+}catch(e){ res.status(500).json({ok:false, error:e.message, stack:e.stack}); }
+});
+app.get('/api/v1/debug/shops', async(req,res)=>{
+if(useMongo && ShopModel){ let arr=await ShopModel.find({}); res.json({mongo:true, count:arr.length, shops:arr}); }
+else { res.json({mongo:false, shops:db.shops}); }
+});
+
 function getWeek(d){let date=new Date(Date.UTC(d.getFullYear(),d.getMonth(),d.getDate())); let dayNum=date.getUTCDay()||7; date.setUTCDate(date.getUTCDate()+4-dayNum); let yearStart=new Date(Date.UTC(date.getUTCFullYear(),0,1)); let weekNo=Math.ceil(( ( (date - yearStart)/86400000)+1)/7); return date.getUTCFullYear()+'-W'+String(weekNo).padStart(2,'0')}
 app.get('/',(req,res)=>{res.send('<h1>SM Modul V7 SZEP - Fut! DB: '+(useMongo?'MongoDB Atlas ✅':'file')+'</h1><a href="/admin">Admin</a>')})
 app.listen(process.env.PORT||10000,()=>console.log('SM V7 SZEP Fut'))
