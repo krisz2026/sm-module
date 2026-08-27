@@ -60,139 +60,40 @@ function isAuthed(req) { let c = parseCookies(req); return c.admin_auth === ADMI
 function requireAuth(req, res, next) { if (isAuthed(req)) return next(); res.redirect('/admin/login'); }
 
 app.get('/admin/login',(req,res)=>{
-res.send(`<html><head><meta name="viewport" content="width=device-width,initial-scale=1"><style>
-body{font-family:Inter,sans-serif;background:#f8fafc;display:flex;justify-content:center;align-items:center;height:100vh;margin:0}
-.card{background:white;padding:32px;border-radius:16px;box-shadow:0 4px 20px rgba(0,0,0,.08);width:340px}
-input{width:100%;padding:14px;margin:10px 0;border:1px solid #e2e8f0;border-radius:10px;box-sizing:border-box}
-button{width:100%;padding:14px;background:#0f172a;color:white;border:0;border-radius:10px;font-weight:600;cursor:pointer}
-</style></head><body>
-<div class="card">
-<h2 style="margin:0 0 8px">SM Admin</h2>
-<p style="color:#64748b;font-size:14px">Lépj be a dashboardba</p>
-<form method="POST" action="/api/v1/admin/login">
-<input type="password" name="password" placeholder="Jelszó (admin123)">
-<button type="submit">Belépés</button>
-</form>
-</div>
-</body></html>`) })
+res.send('<html><head><meta name="viewport" content="width=device-width,initial-scale=1"><style>body{font-family:sans-serif;background:#f8fafc;display:flex;justify-content:center;align-items:center;height:100vh;margin:0}.card{background:white;padding:32px;border-radius:16px;box-shadow:0 4px 20px rgba(0,0,0,.08);width:340px}input{width:100%;padding:14px;margin:10px 0;border:1px solid #e2e8f0;border-radius:10px;box-sizing:border-box}button{width:100%;padding:14px;background:#0f172a;color:white;border:0;border-radius:10px;font-weight:600;cursor:pointer}</style></head><body><div class="card"><h2>SM Admin</h2><p>Lepj be</p><form method="POST" action="/api/v1/admin/login"><input type="password" name="password" placeholder="admin123"><button type="submit">Belepes</button></form></div></body></html>')
+})
 
 app.all('/api/v1/admin/login',(req,res)=>{
 let pass=req.body.password||req.body.pass||req.query.password;
 if(pass===ADMIN_PASSWORD){
-res.setHeader('Set-Cookie',`admin_auth=${ADMIN_PASSWORD}; Path=/; HttpOnly; SameSite=Lax`);
+res.setHeader('Set-Cookie','admin_auth='+ADMIN_PASSWORD+'; Path=/; HttpOnly; SameSite=Lax');
 return res.redirect('/admin')
 }
-res.send('<h1>Hibás jelszó!</h1><a href="/admin/login">Vissza</a>')
+res.send('<h1>Hibas jelszo!</h1><a href="/admin/login">Vissza</a>')
 })
 app.get('/admin/logout',(req,res)=>{
 res.setHeader('Set-Cookie','admin_auth=; Path=/; Expires=Thu, 01 Jan 1970 00:00:00 GMT');
 res.redirect('/admin/login')
 })
 
-app.get('/admin',requireAuth,(req,res)=>{
-let persistentText = useMongo ? 'IGEN ✅' : 'NEM ❌';
-let html=`<html><head><meta name="viewport" content="width=device-width,initial-scale=1">
-<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-<style>
-*{box-sizing:border-box}
-body{font-family:Inter,Segoe UI,sans-serif;background:#f8fafc;color:#0f172a;margin:0;padding:20px}
-.topbar{background:white;padding:16px 20px;border-radius:12px;display:flex;justify-content:space-between;align-items:center;box-shadow:0 1px 3px rgba(0,0,0,.06);margin-bottom:20px}
-.badge{background:#dcfce7;color:#166534;padding:4px 10px;border-radius:20px;font-size:12px;font-weight:600}
-.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:16px;margin-bottom:20px}
-.statCard{background:white;padding:20px;border-radius:16px;box-shadow:0 1px 3px rgba(0,0,0,.06)}
-.statLabel{color:#64748b;font-size:13px;margin-bottom:6px}
-.statValue{font-size:28px;font-weight:700;color:#0f172a}
-.chartBox{background:white;padding:20px;border-radius:16px;box-shadow:0 1px 3px rgba(0,0,0,.06);margin-bottom:20px}
-.tabs{display:flex;gap:8px;margin-bottom:16px}
-.tab{padding:8px 16px;border-radius:20px;border:1px solid #e2e8f0;background:white;color:#64748b;cursor:pointer;font-size:14px}
-.tab.active{background:#0f172a;color:white;border-color:#0f172a}
-input{padding:10px 14px;border:1px solid #e2e8f0;border-radius:10px}
-button{padding:10px 16px;border-radius:10px;border:0;cursor:pointer;font-weight:600}
-.btnGreen{background:#16a34a;color:white}
-.btnRed{background:#fee2e2;color:#991b1b}
-.shopItem{background:white;padding:14px 16px;border-radius:12px;margin-bottom:10px;display:flex;justify-content:space-between;align-items:center;box-shadow:0 1px 2px rgba(0,0,0,.05)}
-.key{font-family:monospace;background:#f1f5f9;color:#334155;padding:4px 8px;border-radius:6px;font-size:11px;word-break:break-all}
-h2{font-size:18px;margin:0 0 12px}
-</style>
-</head><body>
-<div class="topbar">
-<div><b>SM Modul</b> <span class="badge">V9 VÉGLEGES • MongoDB ${persistentText}</span></div>
-<a href="/admin/logout"><button class="btnRed">Kilépés</button></a>
-</div>
-
-<div class="grid">
-<div class="statCard"><div class="statLabel">Össz bevétel</div><div class="statValue" id="totalRev">0 Ft</div></div>
-<div class="statCard"><div class="statLabel">Össz kosár</div><div class="statValue" id="totalCart">0</div></div>
-<div class="statCard"><div class="statLabel">Aktív boltok</div><div class="statValue" id="totalShop">0</div></div>
-</div>
-
-<div class="chartBox">
-<h2>Bevétel alakulása</h2>
-<div class="tabs">
-<button class="tab active" id="tab-daily" onclick="showChart('daily')">Napi</button>
-<button class="tab" id="tab-weekly" onclick="showChart('weekly')">Heti</button>
-<button class="tab" id="tab-monthly" onclick="showChart('monthly')">Havi</button>
-</div>
-<canvas id="revChart" height="120"></canvas>
-</div>
-
-<div class="chartBox">
-<h2>Új bolt létrehozása</h2>
-<div style="display:flex;gap:8px;flex-wrap:wrap">
-<input id="shopName" placeholder="Bolt név">
-<input id="expiresIn" type="number" placeholder="Lejárat nap (0=soha)" style="width:160px">
-<button class="btnGreen" onclick="createShop()">+ Létrehozás</button>
-</div>
-<div id="createResult" style="margin-top:12px"></div>
-</div>
-
-<div class="chartBox">
-<h2>API Kulcsok</h2>
-<div style="display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap">
-<input id="search" placeholder="Keresés név / kulcs..." oninput="filterShops()" style="flex:1;min-width:200px">
-</div>
-<div id="shopList"></div>
-</div>
-
-<script>
-let allShops=[]; let chartInst=null; let chartData=null;
-async function loadStats(){
-let r=await fetch('/api/v1/admin/stats'); let d=await r.json(); chartData=d;
-document.getElementById('totalRev').innerText=(Object.values(d.perShop).reduce((a,b)=>a+b.revenue,0)).toLocaleString('hu-HU')+' Ft';
-document.getElementById('totalCart').innerText=Object.values(d.perShop).reduce((a,b)=>a+b.count,0);
-document.getElementById('totalShop').innerText=Object.keys(d.perShop).length;
-showChart('daily'); renderShops(d.perShop);
+app.get('/admin',requireAuth,async(req,res)=>{
+let shops=[];
+if(useMongo && ShopModel){
+ shops = await ShopModel.find({}).lean();
+} else {
+ shops = Object.keys(db.shops).map(k=>({...db.shops[k], _id:k, apiKey:k}));
 }
-function showChart(type){
-if(!chartData) return;
-document.querySelectorAll('.tab').forEach(t=>t.classList.remove('active'));
-document.getElementById('tab-'+type).classList.add('active');
-let data=chartData[type]||[];
-let labels=data.map(x=>x.date); let values=data.map(x=>x.total);
-if(chartInst) chartInst.destroy();
-let ctx=document.getElementById('revChart').getContext('2d');
-chartInst=new Chart(ctx,{type:'line',data:{labels,datasets:[{label:'Bevétel Ft',data:values,borderColor:'#16a34a',backgroundColor:'rgba(22,163,74,0.1)',tension:0.3,fill:true}]},options:{responsive:true,plugins:{legend:{display:false}}}});
-}
-function renderShops(perShop){
-allShops=Object.values(perShop);
-let html=''; allShops.forEach(s=>{
-let status=s.disabled?'<span style="color:#dc2626;font-size:12px">⛔ Letiltva</span>':'<span style="color:#16a34a;font-size:12px">● Aktív</span>';
-let exp=s.expiresAt? new Date(s.expiresAt).toLocaleDateString('hu-HU') : 'Soha';
-html+='<div class="shopItem" data-search="'+s.name+' '+s.apiKey+'">'+
-'<div style="flex:1;min-width:0"><div style="font-weight:600">'+s.name+' '+status+'</div><div class="key" style="margin-top:6px">'+s.apiKey+'</div><div style="font-size:12px;color:#64748b;margin-top:4px">'+(s.revenue||0)+' Ft • '+(s.count||0)+' kosár • Lejárat: '+exp+'</div></div>'+
-'<div style="display:flex;gap:6px;flex-direction:column"><button class="btnGreen" style="font-size:12px;padding:6px 10px" onclick="copyKey(\\''+s.apiKey+'\\')">Másol</button><button style="font-size:12px;padding:6px 10px;background:#f1f5f9" onclick="regenerate(\\''+s.apiKey+'\\')">Újragenerál</button><button class="btnRed" style="font-size:12px;padding:6px 10px" onclick="disableKey(\\''+s.apiKey+'\\')">Tilt</button></div>'+
-'</div>';
+let html='<html><head><meta name="viewport" content="width=device-width,initial-scale=1"><style>body{font-family:sans-serif;padding:20px;background:#f8fafc}.card{background:white;padding:16px;border-radius:12px;margin-bottom:10px;box-shadow:0 1px 3px rgba(0,0,0,.06)}.key{font-family:monospace;background:#f1f5f9;padding:4px 8px;border-radius:6px;font-size:12px;word-break:break-all}</style></head><body>';
+html+='<h1>SM Admin V9 - EGYSZERU NEZET ✅</h1><p><a href="/admin/logout">Kilepes</a> | <a href="/">Fooldal</a> | <a href="/api/v1/debug/shops">JSON lista</a></p>';
+html+='<p>DB: '+(useMongo?'MongoDB Atlas ✅':'file')+' | Boltok: '+shops.length+'</p>';
+html+='<div style="background:white;padding:16px;border-radius:12px;margin-bottom:20px"><h3>Uj bolt</h3><form onsubmit="createShop(event)"><input id="shopName" placeholder="Bolt nev" required><button type="submit">Letrehoz</button></form><div id="res"></div></div>';
+html+='<h2>Boltok listaja</h2>';
+shops.forEach(s=>{
+ html+='<div class="card"><b>'+ (s.name||'Nev nelkul') +'</b> '+(s.disabled?'⛔ Tiltva':'● Aktiv')+'<br><div class="key">'+ (s._id||s.apiKey) +'</div><div>Bevetel: '+(s.revenue||0)+' Ft | Kosar: '+(s.cartCount||0)+'</div></div>';
 });
-document.getElementById('shopList').innerHTML=html||'<p style="color:#94a3b8">Nincs bolt még</p>';
-}
-function filterShops(){let q=document.getElementById('search').value.toLowerCase(); document.querySelectorAll('.shopItem').forEach(el=>{el.style.display=el.dataset.search.toLowerCase().includes(q)?'flex':'none'})}
-async function createShop(){let name=document.getElementById('shopName').value; let expiresInDays=document.getElementById('expiresIn').value||0; let r=await fetch('/api/v1/admin/create-shop',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name,expiresInDays})}); let d=await r.json(); if(d.ok){document.getElementById('createResult').innerHTML='<div class="key">OK! Kulcs: '+d.apiKey+'</div>'; loadStats();} else alert('Hiba');}
-async function disableKey(k){if(!confirm('Biztos letiltod?')) return; await fetch('/api/v1/admin/disable-key',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({apiKey:k})}); loadStats();}
-async function regenerate(k){if(!confirm('Új kulcs generálása? Régi letiltva lesz.')) return; let r=await fetch('/api/v1/admin/regenerate',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({apiKey:k})}); let d=await r.json(); if(d.ok){alert('Új kulcs: '+d.newApiKey); loadStats();}}
-function copyKey(k){navigator.clipboard.writeText(k); alert('Másolva: '+k)}
-loadStats();
-</script>
-</body></html>`;
+html+='<script>async function createShop(e){e.preventDefault();let name=document.getElementById("shopName").value;let r=await fetch("/api/v1/admin/create-shop",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({name})});let d=await r.json();document.getElementById("res").innerText="OK! Kulcs: "+d.apiKey; location.reload();}</script>';
+html+='</body></html>';
+res.send(html);
 })
 
 app.get('/api/v1/admin/stats',async(req,res)=>{
@@ -240,11 +141,10 @@ if(useMongo && CartModel){ shop.revenue+=total; shop.cartCount+=1; await shop.sa
 let valasz={ok:true,received:cart.length,total}; if(idemKey) idempotency[idemKey]=valasz; res.json(valasz)
 })
 
-
 app.get('/api/v1/debug/add-cart', async(req,res)=>{
 try{
 let key=req.query.key||req.query.apiKey;
-if(!key) return res.status(400).send('Hiányzik ?key= paraméter');
+if(!key) return res.status(400).send('Hianyzik ?key= parameter');
 let shop=null;
 if(useMongo && ShopModel){ 
   shop=await ShopModel.findById(key);
@@ -259,14 +159,14 @@ if(useMongo && ShopModel){
 shop.revenue=(shop.revenue||0)+price;
 shop.cartCount=(shop.cartCount||0)+1;
 await shop.save();
-await CartModel.create({apiKey:key, session:{test:true, name:'debug'}, cart:[{name:'Teszt Termék', price, qty:1}], total:price, time:new Date()});
+await CartModel.create({apiKey:key, session:{test:true, name:'debug'}, cart:[{name:'Teszt Termek', price, qty:1}], total:price, time:new Date()});
 } else {
 shop.revenue=(shop.revenue||0)+price;
 shop.cartCount=(shop.cartCount||0)+1;
-db.carts.push({apiKey:key, session:{test:true}, cart:[{name:'Teszt Termék', price, qty:1}], total:price, time:new Date()});
+db.carts.push({apiKey:key, session:{test:true}, cart:[{name:'Teszt Termek', price, qty:1}], total:price, time:new Date()});
 save();
 }
-res.send(`<h1>✅ SIKER!</h1><p>Bolt: ${shop.name||key}</p><p>+${price} Ft hozzáadva!</p><p>CartCount: ${shop.cartCount}</p><p>Revenue: ${shop.revenue}</p><a href="/admin">Menj az Adminba -></a>`);
+res.send('<h1>SIKER!</h1><p>Bolt: '+(shop.name||key)+'</p><p>+'+price+' Ft hozzaadva!</p><p>CartCount: '+shop.cartCount+'</p><p>Revenue: '+shop.revenue+'</p><a href="/admin">Menj az Adminba -></a>');
 }catch(e){ res.status(500).send('HIBA: '+e.message); }
 });
 
@@ -276,11 +176,11 @@ let name=req.query.name||'Teszt Bolt';
 let key='sm_live_'+crypto.randomBytes(16).toString('hex');
 if(useMongo && ShopModel){
 await ShopModel.create({_id:key,name,revenue:0,cartCount:0,createdAt:new Date(),expiresAt:null});
-return res.json({ok:true, apiKey:key, msg:'MongoDB-ben létrehozva!', mongo: true});
+return res.json({ok:true, apiKey:key, msg:'MongoDB-ben letrehozva!', mongo: true});
 } else {
 db.shops[key]={name,revenue:0,cartCount:0,createdAt:new Date(),expiresAt:null};
 save();
-return res.json({ok:true, apiKey:key, msg:'File DB-ben létrehozva', mongo:false});
+return res.json({ok:true, apiKey:key, msg:'File DB-ben letrehozva', mongo:false});
 }
 }catch(e){ res.status(500).json({ok:false, error:e.message, stack:e.stack}); }
 });
