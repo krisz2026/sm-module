@@ -117,7 +117,7 @@ h2{font-size:18px;margin:0 0 12px}
 </style>
 </head><body>
 <div class="topbar">
-<div><b>SM Modul</b> <span class="badge">V7 SZÉP • MongoDB ${persistentText}</span></div>
+<div><b>SM Modul</b> <span class="badge">V9 VÉGLEGES • MongoDB ${persistentText}</span></div>
 <a href="/admin/logout"><button class="btnRed">Kilépés</button></a>
 </div>
 
@@ -220,12 +220,20 @@ res.send(html)
 
 app.get('/api/v1/admin/shops',async(req,res)=>{
 if(!isAuthed(req)) return res.status(401).json({ok:false});
-if(useMongo && ShopModel){ let shopsArr = await ShopModel.find({}); let shops = {}; shopsArr.forEach(s=>{ shops[s._id]=s }); return res.json({ok:true,shops}); }
-res.json({ok:true,shops:db.shops})
+try{
+let shops = {};
+if(useMongo && ShopModel){ 
+  let shopsArr = await ShopModel.find({}); 
+  shopsArr.forEach(s=>{ shops[s._id]={_id:s._id, name:s.name, revenue:s.revenue||0, cartCount:s.cartCount||0, disabled:s.disabled, expiresAt:s.expiresAt, createdAt:s.createdAt} });
+}
+// Merge file db too for safety (if some shops only in file)
+for(let k in db.shops){ if(!shops[k]) shops[k]=db.shops[k]; }
+return res.json({ok:true,shops, mongoCount:Object.keys(shops).length, useMongo});
+}catch(e){ return res.status(500).json({ok:false, error:e.message}); }
 })
 app.get('/api/v1/admin/analytics',async(req,res)=>{
 if(!isAuthed(req) && req.headers['x-admin-pass']!==ADMIN_PASSWORD) return res.status(401).json({ok:false});
-let dailyMap={}, weeklyMap={}, monthlyMap={}, perShop={}; let carts=[];
+let dailyMap={}, weeklyMap={}, monthlyMap={}, perShop={}; let carts=[]; let shopsForStats=[];
 if(useMongo && CartModel){ carts = await CartModel.find({}).sort({time:-1}).limit(2000); let shopsArr = await ShopModel.find({}); shopsArr.forEach(s=>{ perShop[s._id]={name:s.name,revenue:s.revenue||0,count:s.cartCount||0, apiKey:s._id}}); }
 else { carts = db.carts; for(let k in db.shops){ perShop[k]={name:db.shops[k].name, revenue:0, count:0, apiKey:k} } }
 carts.forEach(c=>{ let k=c.apiKey||c.shopId; let t=new Date(c.time||c.createdAt); if(!t||isNaN(t)) t=new Date(); let day=t.toISOString().slice(0,10); let month=t.toISOString().slice(0,7); let week=getWeek(t); dailyMap[day]=(dailyMap[day]||0)+(c.total||0); weeklyMap[week]=(weeklyMap[week]||0)+(c.total||0); monthlyMap[month]=(monthlyMap[month]||0)+(c.total||0); if(!perShop[k]) perShop[k]={name:k,revenue:0,count:0,apiKey:k}; perShop[k].revenue+=c.total||0; perShop[k].count+=1; })
@@ -269,7 +277,13 @@ try{
 let key=req.query.key||req.query.apiKey;
 if(!key) return res.status(400).send('Hiányzik ?key= paraméter');
 let shop=null;
-if(useMongo && ShopModel){ shop=await ShopModel.findById(key); }
+if(useMongo && ShopModel){ 
+  shop=await ShopModel.findById(key);
+  if(!shop){
+    // Auto create if not exists (for ElsoBoltom)
+    shop = await ShopModel.create({_id:key, name:'ElsoBoltom', revenue:0, cartCount:0, createdAt:new Date()});
+  }
+}
 else { shop=db.shops[key]; if(shop) shop._id=key; }
 if(!shop) return res.status(404).send('Nincs ilyen bolt: '+key);
 let price=5990;
@@ -308,5 +322,4 @@ else { res.json({mongo:false, shops:db.shops}); }
 });
 
 function getWeek(d){let date=new Date(Date.UTC(d.getFullYear(),d.getMonth(),d.getDate())); let dayNum=date.getUTCDay()||7; date.setUTCDate(date.getUTCDate()+4-dayNum); let yearStart=new Date(Date.UTC(date.getUTCFullYear(),0,1)); let weekNo=Math.ceil(( ( (date - yearStart)/86400000)+1)/7); return date.getUTCFullYear()+'-W'+String(weekNo).padStart(2,'0')}
-app.get('/',(req,res)=>{res.send('<h1>SM Modul V7 SZEP - Fut! DB: '+(useMongo?'MongoDB Atlas ✅':'file')+'</h1><a href="/admin">Admin</a>')})
-app.listen(process.env.PORT||10000,()=>console.log('SM V7 SZEP Fut'))
+app.get('/',(req,res)=>{res.send('<h1>SM Modul V7 SZEP - Fut! DB: '+(useMongo?'MongoDB Atlas ✅':'file')+'</
