@@ -1,4 +1,3 @@
-
 const express = require('express');
 const fs = require('fs');
 const crypto = require('crypto');
@@ -137,105 +136,75 @@ h2{font-size:18px;margin:0 0 12px}
 <canvas id="revChart" height="120"></canvas>
 </div>
 
-<div style="display:grid;grid-template-columns:1fr 1fr;gap:16px">
-<div class="chartBox"><h2>Boltok megoszlása</h2><canvas id="shopChart" height="200"></canvas></div>
 <div class="chartBox">
 <h2>Új bolt létrehozása</h2>
-<input id="name" placeholder="Bolt neve" style="width:100%;margin-bottom:8px">
-<input id="exp" type="number" placeholder="Lejárat nap (0=soha)" style="width:100%;margin-bottom:12px">
-<button class="btnGreen" style="width:100%" onclick="createShop()">+ Létrehozás</button>
-<p style="font-size:12px;color:#94a3b8;margin-top:12px">Tipp: A kulcsot másold a Shopify modulba</p>
+<div style="display:flex;gap:8px;flex-wrap:wrap">
+<input id="shopName" placeholder="Bolt név">
+<input id="expiresIn" type="number" placeholder="Lejárat nap (0=soha)" style="width:160px">
+<button class="btnGreen" onclick="createShop()">+ Létrehozás</button>
 </div>
+<div id="createResult" style="margin-top:12px"></div>
 </div>
 
-<div class="chartBox" style="margin-top:20px">
-<h2>Aktív API kulcsok</h2>
-<div id="list"></div>
+<div class="chartBox">
+<h2>API Kulcsok</h2>
+<div style="display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap">
+<input id="search" placeholder="Keresés név / kulcs..." oninput="filterShops()" style="flex:1;min-width:200px">
+</div>
+<div id="shopList"></div>
 </div>
 
 <script>
-let chartRev=null, chartShop=null, analyticsData=null;
-async function load(){
-try{
-let r=await fetch('/api/v1/admin/shops',{credentials:'same-origin'})
-let d=await r.json()
-let h='', totalRev=0, totalCart=0, active=0;
-for(let k in d.shops){let s=d.shops[k]; if(s.disabled) continue;
-totalRev+=s.revenue||0; totalCart+=s.cartCount||0; active++;
-h+='<div class=shopItem><div><b>'+s.name+'</b><div class=key>'+k+'</div><div style="font-size:12px;color:#64748b;margin-top:4px">'+(s.revenue||0)+' Ft • '+(s.cartCount||0)+' kosár</div></div><div><button class=btnRed onclick="disableKey(\''+k+'\')">Tilt</button> <button style="background:#f1f5f9" onclick="regenKey(\''+k+'\')">Új kulcs</button></div></div>';
-}
-if(h==='') h='<p style="color:#94a3b8">Még nincs bolt. Hozz létre egyet fent.</p>';
-document.getElementById('list').innerHTML=h;
-document.getElementById('totalRev').innerText=totalRev.toLocaleString()+' Ft';
-document.getElementById('totalCart').innerText=totalCart;
-document.getElementById('totalShop').innerText=active;
-let a=await fetch('/api/v1/admin/analytics').then(r=>r.json());
-analyticsData=a
-drawShopChart(a.perShop)
-showChart('daily')
+let allShops=[]; let chartInst=null; let chartData=null;
+async function loadStats(){
+let r=await fetch('/api/v1/admin/stats'); let d=await r.json(); chartData=d;
+document.getElementById('totalRev').innerText=(Object.values(d.perShop).reduce((a,b)=>a+b.revenue,0)).toLocaleString('hu-HU')+' Ft');
+document.getElementById('totalCart').innerText=Object.values(d.perShop).reduce((a,b)=>a+b.count,0);
+document.getElementById('totalShop').innerText=Object.keys(d.perShop).length;
+showChart('daily'); renderShops(d.perShop);
 }
 function showChart(type){
-document.querySelectorAll('.tab').forEach(t=>t.classList.remove('active'))
-document.getElementById('tab-'+type).classList.add('active')
-let labels=[], data=[]
-if(type==='daily'){labels=analyticsData.daily.map(x=>x.date); data=analyticsData.daily.map(x=>x.total)}
-if(type==='weekly'){labels=analyticsData.weekly.map(x=>x.date); data=analyticsData.weekly.map(x=>x.total)}
-if(type==='monthly'){labels=analyticsData.monthly.map(x=>x.date); data=analyticsData.monthly.map(x=>x.total)}
-drawRevChart(labels,data,type)
+if(!chartData) return;
+document.querySelectorAll('.tab').forEach(t=>t.classList.remove('active'));
+document.getElementById('tab-'+type).classList.add('active');
+let data=chartData[type]||[];
+let labels=data.map(x=>x.date); let values=data.map(x=>x.total);
+if(chartInst) chartInst.destroy();
+let ctx=document.getElementById('revChart').getContext('2d');
+chartInst=new Chart(ctx,{type:'line',data:{labels,datasets:[{label:'Bevétel Ft',data:values,borderColor:'#16a34a',backgroundColor:'rgba(22,163,74,0.1)',tension:0.3,fill:true}]},options:{responsive:true,plugins:{legend:{display:false}}}});
 }
-function drawRevChart(labels,data,type){
-let ctx=document.getElementById('revChart')
-if(chartRev) chartRev.destroy()
-chartRev=new Chart(ctx,{type:'bar',data:{labels:labels,datasets:[{data:data,backgroundColor:'#0f172a',borderRadius:8,barThickness:22}]},options:{responsive:true,plugins:{legend:{display:false}},scales:{x:{grid:{display:false}},y:{grid:{color:'#f1f5f9'}}}}})
+function renderShops(perShop){
+allShops=Object.values(perShop);
+let html=''; allShops.forEach(s=>{
+let status=s.disabled?'<span style="color:#dc2626;font-size:12px">⛔ Letiltva</span>':'<span style="color:#16a34a;font-size:12px">● Aktív</span>';
+let exp=s.expiresAt? new Date(s.expiresAt).toLocaleDateString('hu-HU') : 'Soha';
+html+=`<div class="shopItem" data-search="${s.name} ${s.apiKey}">
+<div style="flex:1;min-width:0"><div style="font-weight:600">${s.name} ${status}</div><div class="key" style="margin-top:6px">${s.apiKey}</div><div style="font-size:12px;color:#64748b;margin-top:4px">${s.revenue||0} Ft • ${s.count||0} kosár • Lejárat: ${exp}</div></div>
+<div style="display:flex;gap:6px;flex-direction:column"><button class="btnGreen" style="font-size:12px;padding:6px 10px" onclick="copyKey('${s.apiKey}')">Másol</button><button style="font-size:12px;padding:6px 10px;background:#f1f5f9" onclick="regenerate('${s.apiKey}')">Újragenerál</button><button class="btnRed" style="font-size:12px;padding:6px 10px" onclick="disableKey('${s.apiKey}')">Tilt</button></div>
+</div>`;
+});
+document.getElementById('shopList').innerHTML=html||'<p style="color:#94a3b8">Nincs bolt még</p>';
 }
-function drawShopChart(perShop){
-let ctx=document.getElementById('shopChart')
-if(chartShop) chartShop.destroy()
-let labels=Object.values(perShop).map(s=>s.name||'Shop')
-let data=Object.values(perShop).map(s=>s.revenue)
-if(labels.length===0){labels=['Nincs adat']; data=[1]}
-chartShop=new Chart(ctx,{type:'doughnut',data:{labels:labels,datasets:[{data:data,backgroundColor:['#0f172a','#334155','#64748b','#94a3b8','#cbd5e1','#16a34a'],borderWidth:0}]},options:{responsive:true,plugins:{legend:{position:'bottom'}}}})
-}
-async function createShop(){
-let n=document.getElementById('name').value.trim();
-if(!n){ alert('Írj be egy nevet!'); return; }
-let e=document.getElementById('exp').value||0;
-try{
-let r=await fetch('/api/v1/admin/create-shop',{method:'POST',headers:{'Content-Type':'application/json'},credentials:'same-origin',body:JSON.stringify({name:n,expiresInDays:parseInt(e)})});
-let txt=await r.text();
-let d=null; try{ d=JSON.parse(txt); }catch{ alert('Hiba válasz: '+txt.substring(0,200)); return; }
-if(!d.ok){ alert('Hiba: '+JSON.stringify(d)); return; }
-alert('✅ LÉTREHOZVA! Kulcs:\n\n'+d.apiKey+'\n\nMásold ki!');
-document.getElementById('name').value='';
-load()
-}catch(err){ alert('Hálózati hiba: '+err.message); console.error(err); }
-}
-async function disableKey(k){if(!confirm('Tiltod?'))return; await fetch('/api/v1/admin/disable-key',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({apiKey:k})}); load()}
-async function regenKey(k){let r=await fetch('/api/v1/admin/regenerate',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({apiKey:k})}); let d=await r.json(); alert('Új kulcs: '+d.newApiKey); load()}
-load()
+function filterShops(){let q=document.getElementById('search').value.toLowerCase(); document.querySelectorAll('.shopItem').forEach(el=>{el.style.display=el.dataset.search.toLowerCase().includes(q)?'flex':'none'})}
+async function createShop(){let name=document.getElementById('shopName').value; let expiresInDays=document.getElementById('expiresIn').value||0; let r=await fetch('/api/v1/admin/create-shop',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name,expiresInDays})}); let d=await r.json(); if(d.ok){document.getElementById('createResult').innerHTML='<div class="key">OK! Kulcs: '+d.apiKey+'</div>'; loadStats();} else alert('Hiba');}
+async function disableKey(k){if(!confirm('Biztos letiltod?')) return; await fetch('/api/v1/admin/disable-key',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({apiKey:k})}); loadStats();}
+async function regenerate(k){if(!confirm('Új kulcs generálása? Régi letiltva lesz.')) return; let r=await fetch('/api/v1/admin/regenerate',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({apiKey:k})}); let d=await r.json(); if(d.ok){alert('Új kulcs: '+d.newApiKey); loadStats();}}
+function copyKey(k){navigator.clipboard.writeText(k); alert('Másolva: '+k)}
+loadStats();
 </script>
-</body></html>`
-res.send(html)
+</body></html>`;
 })
 
-app.get('/api/v1/admin/shops',async(req,res)=>{
+app.get('/api/v1/admin/stats',async(req,res)=>{
 if(!isAuthed(req)) return res.status(401).json({ok:false});
-try{
-let shops = {};
-if(useMongo && ShopModel){ 
-  let shopsArr = await ShopModel.find({}); 
-  shopsArr.forEach(s=>{ shops[s._id]={_id:s._id, name:s.name, revenue:s.revenue||0, cartCount:s.cartCount||0, disabled:s.disabled, expiresAt:s.expiresAt, createdAt:s.createdAt} });
-}
-// Merge file db too for safety (if some shops only in file)
-for(let k in db.shops){ if(!shops[k]) shops[k]=db.shops[k]; }
-return res.json({ok:true,shops, mongoCount:Object.keys(shops).length, useMongo});
-}catch(e){ return res.status(500).json({ok:false, error:e.message}); }
-})
-app.get('/api/v1/admin/analytics',async(req,res)=>{
-if(!isAuthed(req) && req.headers['x-admin-pass']!==ADMIN_PASSWORD) return res.status(401).json({ok:false});
-let dailyMap={}, weeklyMap={}, monthlyMap={}, perShop={}; let carts=[]; let shopsForStats=[];
-if(useMongo && CartModel){ carts = await CartModel.find({}).sort({time:-1}).limit(2000); let shopsArr = await ShopModel.find({}); shopsArr.forEach(s=>{ perShop[s._id]={name:s.name,revenue:s.revenue||0,count:s.cartCount||0, apiKey:s._id}}); }
-else { carts = db.carts; for(let k in db.shops){ perShop[k]={name:db.shops[k].name, revenue:0, count:0, apiKey:k} } }
+let shopsMap={}; let carts=[]; let dailyMap={}; let weeklyMap={}; let monthlyMap={}; let perShop={};
+if(useMongo && ShopModel){
+let sArr=await ShopModel.find({}); sArr.forEach(s=>{ shopsMap[s._id]=s; perShop[s._id]={name:s.name, revenue:s.revenue||0, count:s.cartCount||0, apiKey:s._id, disabled:s.disabled, expiresAt:s.expiresAt}; });
+let cArr=await CartModel.find({}).sort({time:-1}).limit(2000); carts=cArr;
+} else { shopsMap=db.shops; carts=db.carts; }
+if(useMongo){
+carts.forEach(c=>{ let t=new Date(c.time); let day=t.toISOString().slice(0,10); let month=t.toISOString().slice(0,7); let week=getWeek(t); dailyMap[day]=(dailyMap[day]||0)+(c.total||0); weeklyMap[week]=(weeklyMap[week]||0)+(c.total||0); monthlyMap[month]=(monthlyMap[month]||0)+(c.total||0); })
+} else { carts = db.carts; for(let k in db.shops){ perShop[k]={name:db.shops[k].name, revenue:0, count:0, apiKey:k} } }
 carts.forEach(c=>{ let k=c.apiKey||c.shopId; let t=new Date(c.time||c.createdAt); if(!t||isNaN(t)) t=new Date(); let day=t.toISOString().slice(0,10); let month=t.toISOString().slice(0,7); let week=getWeek(t); dailyMap[day]=(dailyMap[day]||0)+(c.total||0); weeklyMap[week]=(weeklyMap[week]||0)+(c.total||0); monthlyMap[month]=(monthlyMap[month]||0)+(c.total||0); if(!perShop[k]) perShop[k]={name:k,revenue:0,count:0,apiKey:k}; perShop[k].revenue+=c.total||0; perShop[k].count+=1; })
 let daily=Object.keys(dailyMap).sort().slice(-14).map(k=>({date:k,total:dailyMap[k]}))
 let weekly=Object.keys(weeklyMap).sort().slice(-12).map(k=>({date:k,total:weeklyMap[k]}))
@@ -322,4 +291,5 @@ else { res.json({mongo:false, shops:db.shops}); }
 });
 
 function getWeek(d){let date=new Date(Date.UTC(d.getFullYear(),d.getMonth(),d.getDate())); let dayNum=date.getUTCDay()||7; date.setUTCDate(date.getUTCDate()+4-dayNum); let yearStart=new Date(Date.UTC(date.getUTCFullYear(),0,1)); let weekNo=Math.ceil(( ( (date - yearStart)/86400000)+1)/7); return date.getUTCFullYear()+'-W'+String(weekNo).padStart(2,'0')}
-app.get('/',(req,res)=>{res.send('<h1>SM Modul V7 SZEP - Fut! DB: '+(useMongo?'MongoDB Atlas ✅':'file')+'</
+app.get('/',(req,res)=>{res.send('<h1>SM Modul V9 VEGLEGES - Fut! DB: '+(useMongo?'MongoDB Atlas ✅':'file')+'</h1><a href="/admin">Admin</a>')})
+app.listen(process.env.PORT||10000,()=>console.log('SM V9 VEGLEGES Fut'))
