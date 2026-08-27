@@ -9,7 +9,7 @@ app.use(cors());
 app.use(bodyParser.json());
 app.use(bodyParser.urlencoded({extended:true}));
 
-const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD ='admin123';
+const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || 'admin123';
 const DB_FILE = process.env.DB_FILE || './db.json';
 const MONGO_URI = process.env.MONGO_URI || process.env.MONGODB_URI || '';
 let useMongo = false;
@@ -158,7 +158,7 @@ h2{font-size:18px;margin:0 0 12px}
 let allShops=[]; let chartInst=null; let chartData=null;
 async function loadStats(){
 let r=await fetch('/api/v1/admin/stats'); let d=await r.json(); chartData=d;
-document.getElementById('totalRev').innerText=(Object.values(d.perShop).reduce((a,b)=>a+b.revenue,0)).toLocaleString('hu-HU')+' Ft');
+document.getElementById('totalRev').innerText=(Object.values(d.perShop).reduce((a,b)=>a+b.revenue,0)).toLocaleString('hu-HU')+' Ft';
 document.getElementById('totalCart').innerText=Object.values(d.perShop).reduce((a,b)=>a+b.count,0);
 document.getElementById('totalShop').innerText=Object.keys(d.perShop).length;
 showChart('daily'); renderShops(d.perShop);
@@ -178,10 +178,10 @@ allShops=Object.values(perShop);
 let html=''; allShops.forEach(s=>{
 let status=s.disabled?'<span style="color:#dc2626;font-size:12px">⛔ Letiltva</span>':'<span style="color:#16a34a;font-size:12px">● Aktív</span>';
 let exp=s.expiresAt? new Date(s.expiresAt).toLocaleDateString('hu-HU') : 'Soha';
-html+=`<div class="shopItem" data-search="${s.name} ${s.apiKey}">
-<div style="flex:1;min-width:0"><div style="font-weight:600">${s.name} ${status}</div><div class="key" style="margin-top:6px">${s.apiKey}</div><div style="font-size:12px;color:#64748b;margin-top:4px">${s.revenue||0} Ft • ${s.count||0} kosár • Lejárat: ${exp}</div></div>
-<div style="display:flex;gap:6px;flex-direction:column"><button class="btnGreen" style="font-size:12px;padding:6px 10px" onclick="copyKey('${s.apiKey}')">Másol</button><button style="font-size:12px;padding:6px 10px;background:#f1f5f9" onclick="regenerate('${s.apiKey}')">Újragenerál</button><button class="btnRed" style="font-size:12px;padding:6px 10px" onclick="disableKey('${s.apiKey}')">Tilt</button></div>
-</div>`;
+html+='<div class="shopItem" data-search="'+s.name+' '+s.apiKey+'">'+
+'<div style="flex:1;min-width:0"><div style="font-weight:600">'+s.name+' '+status+'</div><div class="key" style="margin-top:6px">'+s.apiKey+'</div><div style="font-size:12px;color:#64748b;margin-top:4px">'+(s.revenue||0)+' Ft • '+(s.count||0)+' kosár • Lejárat: '+exp+'</div></div>'+
+'<div style="display:flex;gap:6px;flex-direction:column"><button class="btnGreen" style="font-size:12px;padding:6px 10px" onclick="copyKey(\\''+s.apiKey+'\\')">Másol</button><button style="font-size:12px;padding:6px 10px;background:#f1f5f9" onclick="regenerate(\\''+s.apiKey+'\\')">Újragenerál</button><button class="btnRed" style="font-size:12px;padding:6px 10px" onclick="disableKey(\\''+s.apiKey+'\\')">Tilt</button></div>'+
+'</div>';
 });
 document.getElementById('shopList').innerHTML=html||'<p style="color:#94a3b8">Nincs bolt még</p>';
 }
@@ -249,7 +249,6 @@ let shop=null;
 if(useMongo && ShopModel){ 
   shop=await ShopModel.findById(key);
   if(!shop){
-    // Auto create if not exists (for ElsoBoltom)
     shop = await ShopModel.create({_id:key, name:'ElsoBoltom', revenue:0, cartCount:0, createdAt:new Date()});
   }
 }
